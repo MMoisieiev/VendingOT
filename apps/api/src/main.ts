@@ -14,6 +14,8 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { z } from 'zod';
+import { createTier, saveProduct, saveMachine, machineInput } from './catalog';
+import { machineHistory, postRefill } from './machines';
 import { devActor, pool } from './db';
 import {
   createLocation,
@@ -44,7 +46,8 @@ class ApiErrors implements ExceptionFilter {
     ) {
       response.status(409).json({
         code: 'DUPLICATE_CODE',
-        message: 'That SKU or location code is already in use.',
+        message:
+          'That SKU, serial number, asset code, location code or tier name is already in use.',
       });
     } else {
       console.error(error);
@@ -67,6 +70,34 @@ class ApiController {
   }
   @Post('products') product(@Body() body: unknown) {
     return createProduct(devActor, parse(productInput, body));
+  }
+  @Post('products/:id') updateProduct(
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return saveProduct(devActor, body, parse(z.uuid(), id));
+  }
+  @Post('price-tiers') tier(@Body() body: unknown) {
+    return createTier(devActor, body);
+  }
+  @Post('machines') machine(@Body() body: unknown) {
+    return saveMachine(devActor, parse(machineInput, body));
+  }
+  @Post('machines/:id') updateMachine(
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return saveMachine(devActor, body, parse(z.uuid(), id));
+  }
+  @Get('machines/:id/history') history(@Param('id') id: string) {
+    return machineHistory(devActor, parse(z.uuid(), id));
+  }
+  @Post('machines/:id/refills') refill(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string = '',
+  ) {
+    return postRefill(devActor, parse(z.uuid(), id), key, body);
   }
   @Post('locations') location(@Body() body: unknown) {
     return createLocation(devActor, parse(locationInput, body));

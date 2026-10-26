@@ -72,7 +72,7 @@ async function fixture() {
   return { actor, product, supplier, warehouse, van, machine, move };
 }
 
-test('reference stock day reconciles 75 warehouse / 0 van / 25 machine, with atomic audit and outbox', async () => {
+test('reference day reconciles tracked stock and records machine delivery without claiming machine stock', async () => {
   const f = await fixture();
   await f.move(f.supplier.id, f.warehouse.id, '100');
   await f.move(f.warehouse.id, f.van.id, '40');
@@ -83,11 +83,15 @@ test('reference stock day reconciles 75 warehouse / 0 van / 25 machine, with ato
     view.balances.find((b) => b.location_id === id)?.quantity;
   assert.equal(quantity(f.warehouse.id), '75.000');
   assert.equal(quantity(f.van.id), '0.000');
-  assert.equal(quantity(f.machine.id), '25.000');
+  assert.equal(quantity(f.machine.id), undefined);
+  assert.equal(
+    view.movements.filter((m) => m.to_location_id === f.machine.id)[0].quantity,
+    '25.000',
+  );
   assert.equal(view.movements.length, 4);
   for (const table of ['audit_events', 'domain_outbox']) {
     const count = await pool.query(
-      `SELECT count(*)::int AS n FROM ${table} WHERE tenant_id=$1`,
+      `SELECT count(*)::int AS n FROM ${table} WHERE tenant_id=$1 ${table === 'audit_events' ? "AND action LIKE 'STOCK_%'" : ''}`,
       [f.actor.tenantId],
     );
     assert.equal(count.rows[0].n, 4);

@@ -8,9 +8,12 @@ import {
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { Actor, pool } from './db';
+import type { PoolClient } from 'pg';
+import { parse } from './validation';
+export { parse } from './validation';
+export { createProduct, productInput } from './catalog';
 
 const label = z.string().trim().min(1).max(120);
-export const productInput = z.object({ sku: label, name: label }).strict();
 export const locationInput = z
   .object({
     code: label,
@@ -24,6 +27,8 @@ export const movementInput = z
     productId: z.uuid(),
     fromLocationId: z.uuid(),
     toLocationId: z.uuid(),
+    entryUnit: z.enum(['EA', 'PACK']).optional(),
+    expectedUnitsPerPack: z.number().int().min(1).max(1000000).optional(),
     quantity: z
       .string()
       .regex(
@@ -38,16 +43,6 @@ export const reversalInput = z
   .object({ reason: z.string().trim().min(3).max(500) })
   .strict();
 
-export function parse<T>(schema: z.ZodType<T>, value: unknown): T {
-  const result = schema.safeParse(value);
-  if (!result.success)
-    throw new BadRequestException({
-      code: 'VALIDATION_ERROR',
-      message: 'Check the submitted fields.',
-      fields: result.error.flatten(),
-    });
-  return result.data;
-}
 function conflict(code: string, message: string): never {
   throw new ConflictException({ code, message });
 }
@@ -61,21 +56,21 @@ export async function overview(actor: Actor) {
       [actor.tenantId],
     );
     const products = await client.query(
-      'SELECT id,sku,name,unit FROM products WHERE tenant_id=$1 ORDER BY sku',
+      'SELECT * FROM products WHERE tenant_id=$1 ORDER BY item_number',
       [actor.tenantId],
     );
     const locations = await client.query(
-      'SELECT id,code,name,type FROM inventory_locations WHERE tenant_id=$1 ORDER BY type,code',
+      'SELECT id,code,name,type,machine_id FROM inventory_locations WHERE tenant_id=$1 ORDER BY type,code',
       [actor.tenantId],
     );
     const balances = await client.query(
       `SELECT e.location_id,e.product_id,sum(e.quantity_delta)::text AS quantity
       FROM inventory_ledger_entries e JOIN inventory_locations l ON l.id=e.location_id AND l.tenant_id=e.tenant_id
-      WHERE e.tenant_id=$1 AND l.type <> 'EXTERNAL' GROUP BY e.location_id,e.product_id ORDER BY e.location_id,e.product_id`,
+      WHERE e.tenant_id=$1 AND l.type IN ('WAREHOUSE','VEHICLE') GROUP BY e.location_id,e.product_id ORDER BY e.location_id,e.product_id`,
       [actor.tenantId],
     );
     const movements = await client.query(
-      `SELECT d.id,d.kind,d.quantity::text,d.note,d.posted_at,d.reversal_of,
+      `SELECT d.id,d.kind,d.quantity::text,d.entered_quantity::text,d.entered_unit,d.units_per_pack_snapshot,d.note,d.posted_at,d.reversal_of, d.from_location_id,d.to_location_id,
       p.name AS product_name,f.name AS from_name,t.name AS to_name,u.display_name AS posted_by,
       EXISTS(SELECT 1 FROM stock_documents r WHERE r.tenant_id=d.tenant_id AND r.reversal_of=d.id) AS reversed
       FROM stock_documents d JOIN products p ON p.id=d.product_id AND p.tenant_id=d.tenant_id
@@ -84,8 +79,23 @@ export async function overview(actor: Actor) {
       JOIN users u ON u.id=d.posted_by WHERE d.tenant_id=$1 ORDER BY d.posted_at DESC,d.id DESC LIMIT 50`,
       [actor.tenantId],
     );
+    const machines = await client.query(
+      'SELECT m.*,l.id AS location_id,t.name AS tier_name FROM machines m JOIN inventory_locations l ON l.machine_id=m.id AND l.tenant_id=m.tenant_id JOIN price_tiers t ON t.id=m.price_tier_id AND t.tenant_id=m.tenant_id WHERE m.tenant_id=$1 ORDER BY m.machine_number',
+      [actor.tenantId],
+    );
+    const tiers = await client.query(
+      'SELECT * FROM price_tiers WHERE tenant_id=$1 ORDER BY is_default DESC,name',
+      [actor.tenantId],
+    );
+    const prices = await client.query(
+      'SELECT product_id,price_tier_id,amount::text FROM product_prices WHERE tenant_id=$1',
+      [actor.tenantId],
+    );
     await client.query('COMMIT');
     return {
+      machines: machines.rows,
+      tiers: tiers.rows,
+      prices: prices.rows,
       tenant: tenant.rows[0],
       products: products.rows,
       locations: locations.rows,
@@ -98,18 +108,6 @@ export async function overview(actor: Actor) {
   } finally {
     client.release();
   }
-}
-
-export async function createProduct(
-  actor: Actor,
-  data: z.infer<typeof productInput>,
-) {
-  return (
-    await pool.query(
-      'INSERT INTO products(tenant_id,sku,name) VALUES ($1,$2,$3) RETURNING id,sku,name,unit',
-      [actor.tenantId, data.sku, data.name],
-    )
-  ).rows[0];
 }
 
 export async function createLocation(
@@ -148,6 +146,7 @@ export async function postMovement(
   actor: Actor,
   key: string,
   input: Movement | { reversalOf: string; reason: string },
+  transaction?: PoolClient,
 ) {
   if (!/^[A-Za-z0-9:_-]{8,128}$/.test(key))
     throw new BadRequestException({
@@ -156,9 +155,9 @@ export async function postMovement(
         'Supply an Idempotency-Key of 8–128 letters, digits, colons, underscores or hyphens.',
     });
   const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
-  const client = await pool.connect();
+  const client = transaction ?? (await pool.connect());
   try {
-    await client.query('BEGIN');
+    if (!transaction) await client.query('BEGIN');
     const membership = await client.query(
       'SELECT role FROM tenant_users WHERE tenant_id=$1 AND user_id=$2',
       [actor.tenantId, actor.userId],
@@ -178,7 +177,7 @@ export async function postMovement(
           'IDEMPOTENCY_CONFLICT',
           'This key was already used for a different movement.',
         );
-      await client.query('COMMIT');
+      if (!transaction) await client.query('COMMIT');
       return { id: prior.rows[0].document_id as string, replayed: true };
     }
     let data: Movement;
@@ -223,13 +222,31 @@ export async function postMovement(
     const source = locations.rows.find((row) => row.id === data.fromLocationId);
     const target = locations.rows.find((row) => row.id === data.toLocationId);
     const product = await client.query(
-      'SELECT 1 FROM products WHERE tenant_id=$1 AND id=$2',
+      'SELECT units_per_pack FROM products WHERE tenant_id=$1 AND id=$2 FOR SHARE',
       [actor.tenantId, data.productId],
     );
     if (!source || !target || !product.rowCount)
       throw new NotFoundException(
         'Product or location not found in this business.',
       );
+    const enteredQuantity = data.quantity;
+    const entryUnit = data.entryUnit ?? 'EA';
+    const packSize = product.rows[0].units_per_pack;
+    if (
+      data.expectedUnitsPerPack !== undefined &&
+      data.expectedUnitsPerPack !== packSize
+    )
+      conflict(
+        'PACK_SIZE_CHANGED',
+        'The product pack size changed. Refresh and review the quantities before posting.',
+      );
+    if (entryUnit === 'PACK')
+      data = {
+        ...data,
+        quantity: new Decimal(data.quantity).mul(packSize).toFixed(0),
+      };
+    if (new Decimal(data.quantity).gt('999999999999999'))
+      throw new BadRequestException('Converted quantity is too large.');
     if (
       !reversalOf &&
       ((data.kind === 'RECEIPT' &&
@@ -253,8 +270,8 @@ export async function postMovement(
         );
     }
     const document = await client.query(
-      `INSERT INTO stock_documents(tenant_id,kind,from_location_id,to_location_id,product_id,quantity,note,reversal_of,posted_by)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      `INSERT INTO stock_documents(tenant_id,kind,from_location_id,to_location_id,product_id,quantity,note,reversal_of,posted_by,entered_quantity,entered_unit,units_per_pack_snapshot)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
       [
         actor.tenantId,
         reversalOf ? 'REVERSAL' : data.kind,
@@ -265,6 +282,9 @@ export async function postMovement(
         data.note,
         reversalOf,
         actor.userId,
+        enteredQuantity,
+        entryUnit,
+        packSize,
       ],
     );
     const id: string = document.rows[0].id;
@@ -301,12 +321,12 @@ export async function postMovement(
         JSON.stringify({ documentId: id, reversalOf }),
       ],
     );
-    await client.query('COMMIT');
+    if (!transaction) await client.query('COMMIT');
     return { id, replayed: false };
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (!transaction) await client.query('ROLLBACK');
     throw error;
   } finally {
-    client.release();
+    if (!transaction) client.release();
   }
 }

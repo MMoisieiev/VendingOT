@@ -17,11 +17,11 @@ async function main() {
       [DEV_TENANT, DEV_USER],
     );
     await client.query(
-      "INSERT INTO products(tenant_id,sku,name) VALUES ($1,'WATER-500','Water · 500 ml') ON CONFLICT DO NOTHING",
+      "INSERT INTO products(tenant_id,sku,name,unit_label,units_per_pack,default_entry_unit) SELECT $1,'WATER-500','Water · 500 ml','Bottle',12,'PACK' WHERE NOT EXISTS(SELECT 1 FROM products WHERE tenant_id=$1 AND sku='WATER-500')",
       [DEV_TENANT],
     );
     await client.query(
-      "INSERT INTO machines(tenant_id,code,name) VALUES ($1,'M-001','Demo machine') ON CONFLICT DO NOTHING",
+      "INSERT INTO machines(tenant_id,code,name) SELECT $1,'M-001','Demo machine' WHERE NOT EXISTS(SELECT 1 FROM machines WHERE tenant_id=$1 AND code='M-001')",
       [DEV_TENANT],
     );
     for (const [code, name, type] of [

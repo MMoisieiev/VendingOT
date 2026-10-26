@@ -2,62 +2,11 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
-type Product = { id: string; sku: string; name: string; unit: string };
-type Location = {
-  id: string;
-  code: string;
-  name: string;
-  type: 'WAREHOUSE' | 'VEHICLE' | 'MACHINE' | 'EXTERNAL';
-};
-type Movement = {
-  id: string;
-  kind: string;
-  quantity: string;
-  note: string;
-  posted_at: string;
-  reversal_of: string | null;
-  product_name: string;
-  from_name: string;
-  to_name: string;
-  posted_by: string;
-  reversed: boolean;
-};
-type Overview = {
-  tenant: { name: string; timezone: string };
-  products: Product[];
-  locations: Location[];
-  balances: { location_id: string; product_id: string; quantity: string }[];
-  movements: Movement[];
-};
-type Tab = 'Overview' | 'Inventory' | 'Products' | 'Locations';
+import { api, Overview, Movement, prettyQuantity } from '../lib/client';
+import { Catalog } from './catalog';
+import { Machines } from './machines';
+type Tab = 'Overview' | 'Inventory' | 'Products' | 'Locations' | 'Machines';
 
-async function api<T>(path: string, body?: unknown, key?: string): Promise<T> {
-  const response = await fetch(
-    `/api/v1/${path}`,
-    body
-      ? {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(key ? { 'Idempotency-Key': key } : {}),
-          },
-          body: JSON.stringify(body),
-        }
-      : { cache: 'no-store' },
-  );
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(
-      Array.isArray(data.message)
-        ? data.message.join(', ')
-        : (data.message ?? 'The request failed. Please try again.'),
-    );
-  return data;
-}
-const prettyQuantity = (value: string) =>
-  new Intl.NumberFormat('en-MU', { maximumFractionDigits: 3 }).format(
-    Number(value),
-  );
 const locationType = (type: string) =>
   ({
     WAREHOUSE: 'Warehouse',
@@ -74,6 +23,9 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [showMovement, setShowMovement] = useState(false);
   const [kind, setKind] = useState('RECEIPT');
+  const [movementProductId, setMovementProductId] = useState('');
+  const [movementQuantity, setMovementQuantity] = useState('');
+  const [movementUnit, setMovementUnit] = useState('EA');
   const [reverse, setReverse] = useState<Movement | null>(null);
   // Preserve the key after an uncertain network result; changing the payload creates a new command.
   const command = useRef<{ payload: string; key: string } | null>(null);
@@ -154,7 +106,10 @@ export default function Home() {
   async function submitMovement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(form);
+    const payload = {
+      ...Object.fromEntries(form),
+      expectedUnitsPerPack: movementProduct?.units_per_pack,
+    };
     if (
       await save(
         'stock-documents',
@@ -165,8 +120,13 @@ export default function Home() {
     )
       setShowMovement(false);
   }
-  const internal = data?.locations.filter((l) => l.type !== 'EXTERNAL') ?? [];
-  const machineCount = internal.filter((l) => l.type === 'MACHINE').length;
+  const internal =
+    data?.locations.filter(
+      (l) => l.type === 'WAREHOUSE' || l.type === 'VEHICLE',
+    ) ?? [];
+  const machineCount = data?.machines.length ?? 0;
+  const movementProduct =
+    data?.products.find((p) => p.id === movementProductId) ?? data?.products[0];
   const balance = (locationId: string, productId: string) =>
     data?.balances.find(
       (b) => b.location_id === locationId && b.product_id === productId,
@@ -193,19 +153,25 @@ export default function Home() {
         </div>
         <p className="nav-label">WORKSPACE</p>
         <nav aria-label="Main navigation">
-          {(['Overview', 'Inventory', 'Products', 'Locations'] as Tab[]).map(
-            (name, i) => (
-              <button
-                key={name}
-                className={tab === name ? 'nav-item active' : 'nav-item'}
-                onClick={() => setTab(name)}
-              >
-                <span aria-hidden="true">{['◫', '▤', '▦', '⌖'][i]}</span>
-                {name}
-                {tab === name && <span className="nav-dot" />}
-              </button>
-            ),
-          )}
+          {(
+            [
+              'Overview',
+              'Inventory',
+              'Products',
+              'Machines',
+              'Locations',
+            ] as Tab[]
+          ).map((name, i) => (
+            <button
+              key={name}
+              className={tab === name ? 'nav-item active' : 'nav-item'}
+              onClick={() => setTab(name)}
+            >
+              <span aria-hidden="true">{['◫', '▤', '▦', '▣', '⌖'][i]}</span>
+              {name}
+              {tab === name && <span className="nav-dot" />}
+            </button>
+          ))}
         </nav>
         <div className="sidebar-note">
           <span className="eyebrow">THE FIRST MILESTONE</span>
@@ -245,7 +211,9 @@ export default function Home() {
                     ? 'Stock with a paper trail.'
                     : tab === 'Products'
                       ? 'Your product catalog.'
-                      : 'A place for every product.'}
+                      : tab === 'Machines'
+                        ? 'Your machines, one place.'
+                        : 'A place for every product.'}
               </h1>
               <p className="subtitle">
                 {tab === 'Overview'
@@ -254,19 +222,24 @@ export default function Home() {
                     ? 'Live balances and a permanent record of every transfer.'
                     : tab === 'Products'
                       ? 'Manage the products moving through your business.'
-                      : 'Warehouses, delivery vehicles, and vending machines.'}
+                      : tab === 'Machines'
+                        ? 'Machine details, price tiers, and refill history.'
+                        : 'Warehouses and delivery vehicles.'}
               </p>
             </div>
-            <button
-              className="primary"
-              disabled={!data || busy}
-              onClick={() => {
-                setShowMovement(true);
-                setError('');
-              }}
-            >
-              ＋ Record movement
-            </button>
+            {tab !== 'Machines' && (
+              <button
+                className="primary"
+                disabled={!data || busy}
+                onClick={() => {
+                  setMovementUnit(movementProduct?.default_entry_unit ?? 'EA');
+                  setShowMovement(true);
+                  setError('');
+                }}
+              >
+                ＋ Record movement
+              </button>
+            )}
           </div>
           {error && !showMovement && !reverse && (
             <div role="alert" className="alert error">
@@ -320,7 +293,7 @@ export default function Home() {
                       [
                         'Machines',
                         machineCount,
-                        'Registered inventory locations',
+                        'Details & delivery history',
                         '◫',
                       ],
                       [
@@ -371,7 +344,7 @@ export default function Home() {
                   <section className="panel">
                     <div className="panel-heading">
                       <div>
-                        <h2>Stock by location</h2>
+                        <h2>Warehouse & van stock</h2>
                         <p>
                           Balances calculated from posted movements. Quantities
                           in individual units.
@@ -404,7 +377,9 @@ export default function Home() {
                               <tr key={p.id}>
                                 <td>
                                   <strong>{p.name}</strong>
-                                  <small>{p.sku}</small>
+                                  <small>
+                                    #{p.item_number} · {p.sku}
+                                  </small>
                                 </td>
                                 {internal.map((l) => (
                                   <td key={l.id}>
@@ -433,8 +408,8 @@ export default function Home() {
                       </table>
                     </div>
                     <div className="panel-footer">
-                      <span className="small-dot" /> Machine balances are
-                      recorded estimates, not verified physical counts.
+                      <span className="small-dot" /> Machine deliveries appear
+                      under Machines. Current stock inside a machine is unknown.
                     </div>
                   </section>
                   <section className="panel">
@@ -531,76 +506,10 @@ export default function Home() {
                 </>
               )}
               {tab === 'Products' && (
-                <div className="two-columns">
-                  <section className="panel">
-                    <div className="panel-heading">
-                      <h2>Product catalog</h2>
-                      <span className="pill">{data.products.length} ITEMS</span>
-                    </div>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>SKU</th>
-                          <th>NAME</th>
-                          <th>UNIT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.products.map((p) => (
-                          <tr key={p.id}>
-                            <td>{p.sku}</td>
-                            <td>
-                              <strong>{p.name}</strong>
-                            </td>
-                            <td>Each</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </section>
-                  <section className="panel form-panel">
-                    <h2>Add a product</h2>
-                    <p>
-                      Start with individual units. Pack conversions will follow.
-                    </p>
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        const form = e.currentTarget;
-                        if (
-                          await save(
-                            'products',
-                            Object.fromEntries(new FormData(form)),
-                            'Product added.',
-                          )
-                        )
-                          form.reset();
-                      }}
-                    >
-                      <label>
-                        SKU
-                        <input
-                          name="sku"
-                          required
-                          maxLength={120}
-                          placeholder="WATER-500"
-                        />
-                      </label>
-                      <label>
-                        Product name
-                        <input
-                          name="name"
-                          required
-                          maxLength={120}
-                          placeholder="Water · 500 ml"
-                        />
-                      </label>
-                      <button className="primary" disabled={busy}>
-                        {busy ? 'Saving…' : 'Add product'}
-                      </button>
-                    </form>
-                  </section>
-                </div>
+                <Catalog data={data} save={save} busy={busy} />
+              )}
+              {tab === 'Machines' && (
+                <Machines data={data} save={save} busy={busy} />
               )}
               {tab === 'Locations' && (
                 <div className="two-columns">
@@ -617,25 +526,27 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {data.locations.map((l) => (
-                          <tr key={l.id}>
-                            <td>
-                              <strong>{l.name}</strong>
-                              <small>{l.code}</small>
-                            </td>
-                            <td>
-                              <span className="pill">
-                                {locationType(l.type)}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {data.locations
+                          .filter((l) => l.type !== 'MACHINE')
+                          .map((l) => (
+                            <tr key={l.id}>
+                              <td>
+                                <strong>{l.name}</strong>
+                                <small>{l.code}</small>
+                              </td>
+                              <td>
+                                <span className="pill">
+                                  {locationType(l.type)}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
                       </tbody>
                     </table>
                   </section>
                   <section className="panel form-panel">
                     <h2>Add a location</h2>
-                    <p>Adding a machine also creates its machine identity.</p>
+                    <p>Manage machines in the separate Machines section.</p>
                     <form
                       onSubmit={async (e) => {
                         e.preventDefault();
@@ -673,7 +584,6 @@ export default function Home() {
                         <select name="type">
                           <option value="WAREHOUSE">Warehouse</option>
                           <option value="VEHICLE">Vehicle</option>
-                          <option value="MACHINE">Machine</option>
                         </select>
                       </label>
                       <button className="primary" disabled={busy}>
@@ -736,7 +646,18 @@ export default function Home() {
               </label>
               <label>
                 Product
-                <select name="productId" required>
+                <select
+                  name="productId"
+                  required
+                  value={movementProduct?.id ?? ''}
+                  onChange={(e) => {
+                    setMovementProductId(e.target.value);
+                    setMovementUnit(
+                      data.products.find((p) => p.id === e.target.value)
+                        ?.default_entry_unit ?? 'EA',
+                    );
+                  }}
+                >
                   {data.products.map((p) => (
                     <option value={p.id} key={p.id}>
                       {p.name} ({p.sku})
@@ -752,7 +673,7 @@ export default function Home() {
                       .filter((l) =>
                         kind === 'RECEIPT'
                           ? l.type === 'EXTERNAL'
-                          : l.type !== 'EXTERNAL',
+                          : l.type === 'WAREHOUSE' || l.type === 'VEHICLE',
                       )
                       .map((l) => (
                         <option value={l.id} key={l.id}>
@@ -768,7 +689,7 @@ export default function Home() {
                       .filter((l) =>
                         kind === 'RECEIPT'
                           ? l.type === 'WAREHOUSE'
-                          : l.type !== 'EXTERNAL',
+                          : l.type === 'WAREHOUSE' || l.type === 'VEHICLE',
                       )
                       .map((l) => (
                         <option value={l.id} key={l.id}>
@@ -779,9 +700,11 @@ export default function Home() {
                 </label>
               </div>
               <label>
-                Quantity (individual units)
+                Quantity
                 <input
                   name="quantity"
+                  value={movementQuantity}
+                  onChange={(e) => setMovementQuantity(e.target.value)}
                   type="text"
                   inputMode="numeric"
                   pattern="[1-9][0-9]{0,14}"
@@ -789,6 +712,40 @@ export default function Home() {
                   placeholder="100"
                 />
               </label>
+              <label>
+                Packaging
+                <select
+                  name="entryUnit"
+                  value={movementUnit}
+                  onChange={(e) => setMovementUnit(e.target.value)}
+                >
+                  <option value="EA">
+                    {movementProduct?.unit_label ?? 'Individual units'}
+                  </option>
+                  <option value="PACK">
+                    {movementProduct?.pack_label ?? 'Pack'} ×{' '}
+                    {movementProduct?.units_per_pack ?? 1}
+                  </option>
+                </select>
+              </label>
+              <p className="form-hint">
+                {movementQuantity || '0'} ×{' '}
+                {movementUnit === 'PACK'
+                  ? (movementProduct?.units_per_pack ?? 1)
+                  : 1}{' '}
+                ={' '}
+                {/^[1-9]\d{0,14}$/.test(movementQuantity)
+                  ? (
+                      BigInt(movementQuantity) *
+                      BigInt(
+                        movementUnit === 'PACK'
+                          ? (movementProduct?.units_per_pack ?? 1)
+                          : 1,
+                      )
+                    ).toLocaleString('en-MU')
+                  : '0'}{' '}
+                individual units
+              </p>
               <label>
                 Note <span className="optional">optional</span>
                 <input
