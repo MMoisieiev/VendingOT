@@ -37,9 +37,12 @@ The resulting balances are **warehouse 75 / van 0 / machine 25**. Repeating the 
 npm run typecheck
 npm test
 npm run build
+npm audit --audit-level=high
 ```
 
 Integration tests require the migrated database. Each creates its own synthetic tenant and never resets development records. Tests cover the stock-day scenario, concurrent retries, insufficient stock under concurrency, tenant isolation, reversals, immutable database records and balanced-ledger constraints. Test fixtures remain in the local database under separate tenants.
+
+The root dependency override pins Multer to 2.5.0 to address GHSA-q7qp-rjg7-q26m while NestJS 11 pins an affected release. Keep the override until the upstream dependency is patched; CI checks for high-severity advisories.
 
 ## Structure
 

@@ -19,6 +19,9 @@
     "db:migrate": "npm run db:migrate -w @vendingot/api",
     "db:seed": "npm run db:seed -w @vendingot/api"
   },
+  "overrides": {
+    "multer": "2.5.0"
+  },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "concurrently": "^9.2.1",
