@@ -1,0 +1,106 @@
+import 'reflect-metadata';
+import {
+  ArgumentsHost,
+  Body,
+  Catch,
+  Controller,
+  ExceptionFilter,
+  Get,
+  Headers,
+  HttpException,
+  Module,
+  Param,
+  Post,
+} from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { z } from 'zod';
+import { devActor, pool } from './db';
+import {
+  createLocation,
+  createProduct,
+  locationInput,
+  movementInput,
+  overview,
+  parse,
+  postMovement,
+  productInput,
+  reversalInput,
+} from './inventory';
+
+@Catch()
+class ApiErrors implements ExceptionFilter {
+  catch(error: unknown, host: ArgumentsHost) {
+    const response = host.switchToHttp().getResponse();
+    if (error instanceof HttpException) {
+      const detail = error.getResponse();
+      response
+        .status(error.getStatus())
+        .json(typeof detail === 'string' ? { message: detail } : detail);
+    } else if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === '23505'
+    ) {
+      response.status(409).json({
+        code: 'DUPLICATE_CODE',
+        message: 'That SKU or location code is already in use.',
+      });
+    } else {
+      console.error(error);
+      response.status(500).json({
+        code: 'INTERNAL_ERROR',
+        message: 'The operation failed. No partial stock movement was saved.',
+      });
+    }
+  }
+}
+
+@Controller('api/v1')
+class ApiController {
+  @Get('health') async health() {
+    await pool.query('SELECT 1');
+    return { status: 'ok', mode: 'local-development', authentication: false };
+  }
+  @Get('overview') overview() {
+    return overview(devActor);
+  }
+  @Post('products') product(@Body() body: unknown) {
+    return createProduct(devActor, parse(productInput, body));
+  }
+  @Post('locations') location(@Body() body: unknown) {
+    return createLocation(devActor, parse(locationInput, body));
+  }
+  @Post('stock-documents') movement(
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string = '',
+  ) {
+    return postMovement(devActor, key, parse(movementInput, body));
+  }
+  @Post('stock-documents/:id/reverse') reverse(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string = '',
+  ) {
+    return postMovement(devActor, key, {
+      reversalOf: parse(z.uuid(), id),
+      ...parse(reversalInput, body),
+    });
+  }
+}
+@Module({ controllers: [ApiController] })
+class AppModule {}
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.useGlobalFilters(new ApiErrors());
+  app.enableShutdownHooks();
+  await app.listen(
+    Number(process.env.API_PORT ?? 3001),
+    process.env.API_HOST ?? '127.0.0.1',
+  );
+}
+bootstrap().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

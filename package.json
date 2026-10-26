@@ -1,0 +1,28 @@
+{
+  "name": "vendingot",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "dev": "concurrently -k -n api,web 'npm run dev -w @vendingot/api' 'npm run dev -w @vendingot/web'",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test -w @vendingot/api",
+    "db:up": "docker compose up -d --wait db",
+    "db:migrate": "npm run db:migrate -w @vendingot/api",
+    "db:seed": "npm run db:seed -w @vendingot/api"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.2.1",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3"
+  }
+}
