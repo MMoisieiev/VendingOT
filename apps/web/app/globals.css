@@ -1020,3 +1020,71 @@ textarea {
     flex-direction: column;
   }
 }
+
+.invoice-check {
+  margin-top: 25px;
+  padding: 0 20px 20px;
+  background: #f6f9f2;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.invoice-match {
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 600;
+}
+.account-summary {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 20px;
+  margin: 24px 0;
+  padding: 22px;
+  background: #eff5e9;
+  border-radius: 8px;
+}
+.account-summary span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.account-summary strong {
+  font-size: 24px;
+  font-weight: 500;
+}
+.account-filters {
+  margin: 18px 0;
+}
+.invoice-selection {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--green);
+}
+.payment-form,
+.legacy-review {
+  margin-top: 25px;
+}
+.legacy-review {
+  padding: 0 20px 20px;
+  background: #fff9eb;
+  border-radius: 8px;
+}
+.invoice-check p {
+  line-height: 1.7;
+}
+.account-summary strong {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .account-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .account-summary > div:first-child {
+    grid-column: 1/-1;
+  }
+  .account-filters button {
+    padding: 10px;
+  }
+}

@@ -8,6 +8,7 @@ import {
   Supplier,
   SupplierProduct,
 } from '../lib/client';
+import { SupplierAccounts } from './supplier-account';
 
 export function Suppliers({
   data,
@@ -64,7 +65,7 @@ export function Suppliers({
                 <tr>
                   <th>ID / SUPPLIER</th>
                   <th>CONTACT</th>
-                  <th>CURRENCY</th>
+                  <th>OUTSTANDING DEBT</th>
                   <th>STATUS</th>
                   <th />
                 </tr>
@@ -86,7 +87,7 @@ export function Suppliers({
                         {[s.phone, s.email].filter(Boolean).join(' · ')}
                       </small>
                     </td>
-                    <td>{s.currency}</td>
+                    <td>{amount(s.outstanding ?? '0', s.currency)}</td>
                     <td>
                       <span className="pill">
                         {s.active ? 'ACTIVE' : 'INACTIVE'}
@@ -174,6 +175,13 @@ export function Suppliers({
               {supplier.address || 'No address recorded.'}
             </p>
           </section>
+          <SupplierAccounts
+            key={supplier.id}
+            data={data}
+            supplier={supplier}
+            save={save}
+            busy={busy}
+          />
           <SupplierLinks
             data={data}
             save={save}
@@ -222,7 +230,11 @@ function SupplierEditor({
           if (
             await save(
               supplier ? `suppliers/${supplier.id}` : 'suppliers',
-              { ...values, active: form.get('active') === 'on' },
+              {
+                ...values,
+                active: form.get('active') === 'on',
+                creditDays: Number(values.creditDays),
+              },
               supplier ? 'Supplier updated.' : 'Supplier created.',
             )
           )
@@ -288,6 +300,22 @@ function SupplierEditor({
           Optional display text, such as SCR or Rs. It never changes amounts or
           blocks receiving.
         </p>
+        <label>
+          Credit term (days)
+          <input
+            name="creditDays"
+            type="number"
+            min="0"
+            max="36500"
+            step="1"
+            required
+            defaultValue={supplier?.credit_days ?? 21}
+          />
+        </label>
+        <p className="form-hint">
+          For example Apex: 30 days. New invoices use this term; existing
+          recorded due dates stay unchanged.
+        </p>
         <label className="checkbox-label">
           <input
             name="active"
@@ -321,7 +349,14 @@ export function SupplierLinks({
   const [chosenSupplier, setChosenSupplier] = useState(supplierId ?? '');
   const [chosenProduct, setChosenProduct] = useState(productId ?? '');
   const [costHistory, setCostHistory] = useState<
-    { unit_cost: string | null; currency: string; changed_at: string }[] | null
+    | {
+        unit_cost: string | null;
+        pack_cost: string | null;
+        units_per_order: number | null;
+        currency: string;
+        changed_at: string;
+      }[]
+    | null
   >(null);
   const [costError, setCostError] = useState('');
   const product = data.products.find(
@@ -462,7 +497,10 @@ export function SupplierLinks({
                 {new Date(h.changed_at).toLocaleString('en-GB', {
                   timeZone: data.tenant.timezone,
                 })}{' '}
-                · {amount(h.unit_cost, h.currency)} per unit
+                · {amount(h.unit_cost, h.currency)} per unit{' '}
+                {h.pack_cost != null
+                  ? ` · ${amount(h.pack_cost, h.currency)} / pack × ${h.units_per_order}`
+                  : ''}
               </p>
             ))
           ) : (
@@ -491,6 +529,7 @@ export function SupplierLinks({
             leadDays: values.leadDays === '' ? null : Number(values.leadDays),
             preferred: form.get('preferred') === 'on',
             active: form.get('active') === 'on',
+            creditDays: Number(values.creditDays),
           };
           if (
             await save(
@@ -604,7 +643,7 @@ export function SupplierLinks({
               name="unitCost"
               type="number"
               min="0"
-              step="0.0001"
+              step="0.00000001"
               defaultValue={edit?.unit_cost ?? ''}
               placeholder="Optional until receiving"
             />

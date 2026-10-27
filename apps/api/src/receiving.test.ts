@@ -108,8 +108,8 @@ test('supplier identities, contacts, preferred links and cost histories survive 
   await saveSupplierProduct(f.actor, { ...f.linkData, unitCost: '5.75' });
   const costs = await supplierCostHistory(f.actor, f.link.id);
   assert.equal(costs.length, 2);
-  assert.equal(costs[0].unit_cost, '5.7500');
-  assert.equal(costs[1].unit_cost, '5.2500');
+  assert.equal(costs[0].unit_cost, '5.75000000');
+  assert.equal(costs[1].unit_cost, '5.25000000');
   const edited = await saveSupplier(
     f.actor,
     { ...f.supplierData, legalName: 'Renamed supplier', active: false },
@@ -166,7 +166,7 @@ test('delivery uses supplier carton size, snapshots actual costs and adds stock 
   assert.equal(history[0].total_cost, '252.0000');
   assert.equal(history[0].lines[0].base_quantity, '48.000');
   assert.equal(history[0].lines[0].units_per_order, 24);
-  assert.equal(history[0].lines[0].unit_cost, '5.2500');
+  assert.equal(history[0].lines[0].unit_cost, '5.25000000');
   await saveSupplier(
     f.actor,
     { ...f.supplierData, legalName: 'New legal name' },
@@ -419,5 +419,5 @@ test('currency is optional display text: different labels and edits never block 
   });
   assert.equal(defaulted.currency, 'SCR');
   const costs = await supplierCostHistory(f.actor, f.link.id);
-  assert.equal(costs[0].unit_cost, '5.2500');
+  assert.equal(costs[0].unit_cost, '5.25000000');
 });

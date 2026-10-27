@@ -18,6 +18,8 @@ async function main() {
       '003_machine_serial_uniqueness',
       '004_suppliers_and_receiving',
       '005_scr_display_labels',
+      '006_supplier_invoices',
+      '007_supplier_credit_and_bank',
     ]) {
       const applied = await client.query(
         'SELECT 1 FROM schema_migrations WHERE version=$1',

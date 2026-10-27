@@ -92,7 +92,7 @@ export async function overview(actor: Actor) {
       [actor.tenantId],
     );
     const suppliers = await client.query(
-      'SELECT * FROM suppliers WHERE tenant_id=$1 ORDER BY supplier_number',
+      `SELECT s.*,COALESCE((SELECT sum(i.invoice_total) FROM supplier_invoices i WHERE i.tenant_id=s.tenant_id AND i.supplier_id=s.id AND i.confirmed AND NOT EXISTS(SELECT 1 FROM supplier_payment_allocations a JOIN supplier_payment_events e ON e.tenant_id=a.tenant_id AND e.payment_id=a.payment_id AND e.event_type='CLEARED' WHERE a.tenant_id=i.tenant_id AND a.invoice_id=i.id)),0)::text AS outstanding FROM suppliers s WHERE s.tenant_id=$1 ORDER BY s.supplier_number`,
       [actor.tenantId],
     );
     const supplierProducts = await client.query(

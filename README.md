@@ -2,7 +2,7 @@
 
 An operations platform for Island Vending, starting with traceable stock movements.
 
-**Current milestone:** supplier records and product–supplier links, atomic multi-item supplier receiving, product and machine records with permanent incremental IDs, pack-aware stock entry, explicit per-product price tiers, and multi-item machine refills. Warehouse and van stock are tracked; machines show delivery history, never a claimed current stock balance.
+**Current milestone:** pack-cost receiving, checked supplier invoices, outstanding debt, bank/clearing records and credit-term reminders, alongside product and machine records with permanent incremental IDs, pack-aware stock entry, explicit per-product price tiers, and multi-item machine refills. Warehouse and van stock are tracked; machines show delivery history, never a claimed current stock balance.
 
 This is a local development foundation, with synthetic data and an explicit seeded development owner. It has **no login or production authentication**. Keep the web and API on loopback and do not expose them publicly or enter real business data yet. Tenant-scoped data and isolation tests establish the model; full authentication, permission enforcement and production security remain future work.
 
@@ -36,24 +36,24 @@ npm run db:seed
 
 Restart the API with `npm run dev -w @vendingot/api` and the web in another terminal with `npm run dev -w @vendingot/web`. These separate commands work in Windows PowerShell too. Do not delete your database volume. Migrations retain products, machines and transaction history. Migration 002 assigns permanent numbers; migration 004 converts existing nonempty supplier names into supplier records and links, merging case/space variants within each business. Existing products keep a one-unit pack until you configure their actual packaging; fresh seed records use twelve-bottle water packs.
 
-## Test the complete supplier → warehouse → machine flow
+## Test supplier receiving, invoice debt and payments
 
-1. In **Products**, edit Water: individual unit Bottle, pack name Pack, **12 units per pack**, default entry Packs. Set its unit/pack barcodes if available. Save it.
-2. Add an **Airport** price tier and enter selling prices separately: Default SCR 10 and Airport SCR 15 per bottle. These selling prices are independent of supplier purchase costs.
-3. In **Suppliers**, create a supplier with its legal name, contact person, phone, email, address and SCR currency. Open it.
-4. Under **Supplied products**, select Water. Enter the supplier’s product reference, ordering unit **Case**, **24 individual units per ordering pack**, and purchase cost **SCR 5.25 per individual bottle**. Mark it preferred if desired and save the link. A supplier case can differ from the product’s normal twelve-bottle pack.
-5. Click **Receive delivery**, select Main warehouse, enter a unique invoice/delivery reference and the received date. Add Water and enter **5 cases × 24 = 120 bottles**. Review **SCR 630** goods value. More linked products can be received on the same document.
-6. Post the delivery. Warehouse stock increases by 120 bottles once. Expand **View items** in delivery history to see the supplier pack conversion, actual unit costs and original total.
-7. In **Machines**, add/open a machine assigned to Airport. Select **Fill up**, choose the warehouse, add Water and enter **7 product packs × 12 = 84 bottles**. Save the refill.
-8. Starting with no stock, the warehouse now has **36 bottles**. Existing balances change this total. The machine records an 84-bottle delivery, not current stock or sales.
+1. Create a supplier under **Suppliers**. No product-linking step is required to receive goods. Set the credit term (Apex uses 30 days in the reference workbook; the default is 21).
+2. Open **Receiving**, choose the supplier/warehouse, and enter invoice reference, invoice date and received date. A due-date override is optional; otherwise the supplier’s credit term is snapshotted.
+3. Click **Add delivery item**, select any active product and enter its arrival pack size, quantity and **cost per arrival pack**. For example, 2 packs of 12 at SCR 100 per pack means 24 units and SCR 200 exactly. The displayed unit cost is derived to eight decimal places; totals use the original pack price, not the rounded unit cost.
+4. Add more products if needed. Enter the paper invoice total. Posting requires the calculated total (rounded to cents) to match. Optional signed invoice charges/discounts need an explanation; these header adjustments are not allocated into item costs.
+5. Leave **Invoice already paid** unchecked to create unpaid debt, or check it and enter payment date/reference for an already settled invoice. Posting updates stock, remembers product–supplier links/arrival packing, and updates each item’s **latest purchase cost**. It does not change selling prices or the product’s normal refill pack.
+6. Open **Suppliers → supplier → Supplier account**. Select unpaid invoices and choose **Paid / cleared** or **Sent to bank · awaiting clearing**. One record may cover several complete invoices.
+7. A pending bank transfer remains in outstanding debt. Use **Mark cleared** in payment history and record the clearing date to settle its invoices. Paid invoices remain in the Paid/All views, and all payment records are retained.
+8. Check deadline indicators: overdue, pay now (due within two days), or not due yet. These are reminders, not restrictions on when you may pay. Supplier term edits affect new invoices; old due dates remain recorded.
 
-Supplier links can also be managed by selecting **Edit** on a product. Each product may have several suppliers and one preferred supplier. Link costs and actual delivery costs are separate: receiving does not silently overwrite your supplier’s saved cost. Supplier cost changes are visible through **Cost history**.
+A supplier case may contain 24 bottles even when the product’s normal refill pack contains 12. Receiving remembers the supplier case; machine refill continues using the product pack. Manually linking supplier products is still available for setup/default prices, but is optional. An intentionally inactive supplier/product link must be reactivated before receiving that product.
 
-**Safety checks to try:** submit the same supplier/reference again (it must be rejected); deactivate a supplier (new receiving must stop); change a supplier’s ordering pack after preparing a delivery (the stale conversion must be rejected). Different suppliers may use the same invoice reference. Supplier/product names, packaging and costs are snapshotted on deliveries so later edits do not rewrite history.
+Old deliveries have no known payment status or checked invoice total. They appear under **Needs review** and do not silently become debt. Confirm the paper invoice total, then record the original payment if already paid. Old-format API requests without a checked invoice total also stay unconfirmed. Existing stock, invoice references and recorded amounts are preserved by migration.
 
-Both deliveries and refills post all lines or none, and retries cannot add/deduct stock twice. Existing stock corrections remain under **Reverse** in inventory history. Original delivery values remain visible with a stock-correction label; they are not supplier payable balances. Separate taxes, fees, discounts, payments, purchase orders and full delivery-wide reversal are future work. Currency is optional display text with SCR as the default. Different labels never block receiving or change amounts; no conversion is performed.
+Posting and payments are atomic/idempotent. Duplicate references are blocked per supplier; failed lines or payment allocations roll back all effects. Stock reversals do not cancel a supplier invoice or count as payment; original financial records remain. Settlements currently cover full selected invoices; partial payments, payment reversals, supplier credit notes and a general ledger are separate future workflows. The application records bank status; it never initiates bank transfers. Currency remains cosmetic SCR text.
 
-Use **Record movement → Opening / manual stock** only for opening/test stock, not normal supplier deliveries. Named suppliers are received through **Receiving**, with their reference and costs. Products and machines keep separate permanent number sequences; supplier IDs are also permanent. Keyboard shortcuts remain deferred.
+See [purchasing specification](docs/purchasing.md) for the reference workbook mapping and API details.
 
 ## Verification
 
@@ -64,7 +64,7 @@ npm run build
 npm audit --audit-level=high
 ```
 
-Integration tests require the migrated database. Each creates its own synthetic tenant and never resets development records. Tests cover permanent numbering, supplier contacts/status, multiple suppliers and preferred links, cost history, supplier-specific ordering packs, exact actual delivery costs, duplicate invoices/retries, atomic receipt/refill rollback, cross-business isolation, stock posting, reversals and immutable snapshots. Test fixtures remain in the local database under separate tenants.
+Integration tests require the migrated database. Each creates its own synthetic tenant and never resets development records. Tests cover permanent numbering, stock/refill invariants, automatic supplier links, exact pack costs, invoice matching, latest cost updates, duplicate invoices/payments, multi-invoice settlement, bank clearing, credit terms/deadlines, cross-business isolation, atomic rollback and immutable history. Test fixtures remain in the local database under separate tenants.
 
 The root dependency override pins Multer to 2.5.0 to address GHSA-q7qp-rjg7-q26m while NestJS 11 pins an affected release. Keep the override until the upstream dependency is patched; CI checks for high-severity advisories.
 
@@ -118,9 +118,9 @@ Supplier input: `legalName`, `contactName`, `phone`, `email`, `address`, `curren
 
 Supplier-product input: `supplierId`, `productId`, `supplierSku`, `orderUnit`, `unitsPerOrder`, nullable `unitCost`, nullable `leadDays`, `preferred`, `active`. Unit cost is a decimal string per individual unit. Currency text is only a display label. Each supplier/product pair has one ordering format in this milestone. Only one preferred supplier is allowed per product.
 
-Receiving input: `supplierId`, `warehouseId`, `reference`, `receivedOn` (YYYY-MM-DD), optional `note`, and `lines: [{ supplierProductId, quantity, entryUnit, expectedUnitsPerOrder, unitCost }]`. `entryUnit` is `ORDER` or `EA`; quantity is a positive whole-number string. Actual cost per individual unit is required, even if the saved supplier cost is unset. The reference is unique per business/supplier, case-insensitively; use a distinct delivery reference for separate shipments.
+Receiving input: `supplierId`, `warehouseId`, `reference`, `receivedOn` (YYYY-MM-DD), optional `note`, and `lines: [{ supplierProductId, quantity, entryUnit, expectedUnitsPerOrder, unitCost }]`. `entryUnit` is `ORDER` or `EA`; quantity is a positive whole-number string. Use `productId` without pre-linking; send `packCost` for an arrival pack or `unitCost` for an individual unit. Checked invoice/payment fields are documented in docs/purchasing.md. Old `supplierProductId` input remains supported. The reference is unique per business/supplier, case-insensitively; use a distinct delivery reference for separate shipments.
 
-Product fields include `sku`, `name`, `unitLabel`, `packLabel`, `unitsPerPack`, `defaultEntryUnit` (`EA` or `PACK`), `barcode`, `packBarcode`, `prices: [{ tierId, amount }]` and the supplier links described above. Costs and prices are decimal strings per individual unit. Omit a tier price to leave it unset. Legacy `supplierName` and `purchaseCost` values remain preserved for compatibility; supplier links are authoritative for new purchasing.
+Product fields include `sku`, `name`, `unitLabel`, `packLabel`, `unitsPerPack`, `defaultEntryUnit` (`EA` or `PACK`), `barcode`, `packBarcode`, `prices: [{ tierId, amount }]` and the supplier links described above. Costs and prices are decimal strings per individual unit. Omit a tier price to leave it unset. Legacy `supplierName` and `purchaseCost` values remain preserved for compatibility; supplier links store purchasing defaults, and received costs update the product’s latest purchase cost.
 
 Stock payloads additionally accept `entryUnit` (`EA` by default or `PACK`) and `expectedUnitsPerPack`. The server calculates base quantities and rejects stale pack conversions.
 

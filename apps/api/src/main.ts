@@ -11,6 +11,7 @@ import {
   Module,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { z } from 'zod';
@@ -22,6 +23,12 @@ import {
   supplierCostHistory,
 } from './suppliers';
 import { postReceipt, receiptHistory } from './receiving';
+import {
+  supplierAccount,
+  recordPayment,
+  confirmInvoice,
+  clearPayment,
+} from './payables';
 import { devActor, pool } from './db';
 import {
   createLocation,
@@ -95,8 +102,45 @@ class ApiController {
   ) {
     return saveSupplier(devActor, body, parse(z.uuid(), id));
   }
+  @Post('suppliers/:id/payments/:paymentId/clear') clear(
+    @Param('id') id: string,
+    @Param('paymentId') paymentId: string,
+    @Body() body: unknown,
+  ) {
+    return clearPayment(
+      devActor,
+      parse(z.uuid(), id),
+      parse(z.uuid(), paymentId),
+      body,
+    );
+  }
   @Post('supplier-products') supplierProduct(@Body() body: unknown) {
     return saveSupplierProduct(devActor, body);
+  }
+  @Get('suppliers/:id/account') account(
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ) {
+    return supplierAccount(devActor, parse(z.uuid(), id), query);
+  }
+  @Post('suppliers/:id/payments') payment(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string = '',
+  ) {
+    return recordPayment(devActor, parse(z.uuid(), id), key, body);
+  }
+  @Post('suppliers/:id/invoices/:invoiceId/confirm') confirm(
+    @Param('id') id: string,
+    @Param('invoiceId') invoiceId: string,
+    @Body() body: unknown,
+  ) {
+    return confirmInvoice(
+      devActor,
+      parse(z.uuid(), id),
+      parse(z.uuid(), invoiceId),
+      body,
+    );
   }
   @Get('supplier-products/:id/cost-history') costHistory(
     @Param('id') id: string,

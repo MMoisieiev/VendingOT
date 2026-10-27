@@ -66,6 +66,7 @@ export function Catalog({
                 <tr>
                   <th>ITEM ID / PRODUCT</th>
                   <th>PACKAGING</th>
+                  <th>LATEST ARRIVAL COST</th>
                   {data.tiers.map((t) => (
                     <th key={t.id}>
                       {t.name}
@@ -92,6 +93,19 @@ export function Catalog({
                           ? p.pack_label
                           : p.unit_label}
                       </small>
+                    </td>
+                    <td>
+                      {amount(p.purchase_cost, data.tenant.currency_code)}
+                      <small>Per individual unit</small>
+                      {p.last_purchase_pack_cost != null && (
+                        <small>
+                          {amount(
+                            p.last_purchase_pack_cost,
+                            data.tenant.currency_code,
+                          )}{' '}
+                          / arrival pack × {p.last_purchase_pack_size}
+                        </small>
+                      )}
                     </td>
                     {data.tiers.map((t) => (
                       <td key={t.id}>

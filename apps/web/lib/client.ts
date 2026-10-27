@@ -13,6 +13,10 @@ export type Product = {
   pack_barcode: string;
   supplier_name: string;
   purchase_cost: string | null;
+  last_purchase_pack_cost: string | null;
+  last_purchase_pack_size: number | null;
+  last_purchase_at: string | null;
+  archived: boolean;
 };
 export type Machine = {
   id: string;
@@ -39,6 +43,7 @@ export type Location = {
 export type Supplier = {
   id: string;
   supplier_number: number;
+  credit_days: number;
   legal_name: string;
   contact_name: string;
   phone: string;
@@ -46,6 +51,8 @@ export type Supplier = {
   address: string;
   currency: string;
   active: boolean;
+  outstanding?: string;
+  unconfirmed_count?: number;
 };
 export type SupplierProduct = {
   id: string;
@@ -55,6 +62,7 @@ export type SupplierProduct = {
   order_unit: string;
   units_per_order: number;
   unit_cost: string | null;
+  pack_cost: string | null;
   lead_days: number | null;
   preferred: boolean;
   active: boolean;
@@ -68,6 +76,9 @@ export type SupplierReceipt = {
   warehouse_name_snapshot: string;
   currency: string;
   total_cost: string;
+  invoice_id: string;
+  invoice_total: string;
+  payment_status: 'UNPAID' | 'IN_BANK' | 'PAID' | 'UNCONFIRMED';
   note: string;
   posted_at: string;
   lines: {
@@ -80,8 +91,50 @@ export type SupplierReceipt = {
     units_per_order: number;
     base_quantity: string;
     unit_cost: string;
+    entered_cost: string | null;
+    cost_basis: 'ORDER' | 'EA' | null;
     line_total: string;
     reversed: boolean;
+  }[];
+};
+export type SupplierAccount = {
+  summary: {
+    outstanding: string;
+    in_bank_amount: string;
+    pay_now_amount: string;
+    hold_amount: string;
+    overdue_amount: string;
+    in_bank_count: number;
+    unpaid_count: number;
+    paid_count: number;
+    unconfirmed_count: number;
+  };
+  invoices: {
+    id: string;
+    reference: string;
+    received_on: string;
+    invoice_total: string;
+    goods_total: string;
+    status: 'PAID' | 'UNPAID' | 'IN_BANK' | 'UNCONFIRMED';
+    paid_on: string | null;
+    invoice_date: string;
+    credit_days_snapshot: number;
+    due_on: string;
+    days_left: number;
+    bank_init_date: string | null;
+    adjustment: string;
+    adjustment_note: string;
+  }[];
+  nextCursor: string | null;
+  payments: {
+    id: string;
+    amount: string;
+    paid_on: string;
+    reference: string;
+    note: string;
+    invoices: string[];
+    stage: 'PAID' | 'IN_BANK';
+    cleared_on: string | null;
   }[];
 };
 export type Movement = {

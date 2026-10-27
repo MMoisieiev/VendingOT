@@ -1,29 +1,15 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { api, amount, Overview, Save, SupplierReceipt } from '../lib/client';
-
+import { scaled, decimal, roundedDivide, receiptLine } from '../lib/money';
 type DeliveryLine = {
   key: string;
-  linkId: string;
+  productId: string;
   quantity: string;
   entryUnit: 'ORDER' | 'EA';
-  unitCost: string;
+  cost: string;
+  packSize: string;
 };
-function lineValue(quantity: string, unitCost: string, multiplier: number) {
-  if (
-    !/^[1-9]\d{0,14}$/.test(quantity) ||
-    !/^(0|[1-9]\d{0,14})(\.\d{1,4})?$/.test(unitCost)
-  )
-    return null;
-  const [whole, fraction = ''] = unitCost.split('.');
-  const scaled = BigInt(whole) * 10000n + BigInt(fraction.padEnd(4, '0'));
-  return BigInt(quantity) * BigInt(multiplier) * scaled;
-}
-function exactAmount(scaled: bigint, currency: string) {
-  const integer = scaled / 10000n;
-  const fraction = (scaled % 10000n).toString().padStart(4, '0');
-  return `${currency ? currency + ' ' : ''}${integer.toLocaleString('en-MU')}.${fraction}`;
-}
 export function Receiving({
   data,
   save,
@@ -37,22 +23,45 @@ export function Receiving({
 }) {
   const [supplierId, setSupplierId] = useState(initialSupplierId);
   const [lines, setLines] = useState<DeliveryLine[]>([]);
+  const [invoiceTotal, setInvoiceTotal] = useState('');
+  const [adjustment, setAdjustment] = useState('0');
+  const [paid, setPaid] = useState(false);
   const [receipts, setReceipts] = useState<SupplierReceipt[]>([]);
   const [historyError, setHistoryError] = useState('');
   const [detail, setDetail] = useState<string | null>(null);
   const supplier = data.suppliers.find((s) => s.id === supplierId);
-  const links = data.supplierProducts.filter(
-    (l) => l.supplier_id === supplierId && l.active,
-  );
+  const products = data.products.filter((p) => !p.archived);
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: data.tenant.timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
+  const packing = (id: string) => {
+    const p = products.find((p) => p.id === id);
+    const link = data.supplierProducts.find(
+      (l) => l.supplier_id === supplierId && l.product_id === id,
+    );
+    return {
+      product: p,
+      link,
+      size: link?.units_per_order ?? p?.units_per_pack ?? 1,
+      label: link?.order_unit ?? p?.pack_label ?? 'Pack',
+    };
+  };
+  const defaultCost = (id: string, entry: 'ORDER' | 'EA') => {
+    const { product, link, size } = packing(id);
+    const unit = scaled(link?.unit_cost ?? product?.purchase_cost ?? '', 8);
+    const pack = scaled(link?.pack_cost ?? '', 8);
+    if (entry === 'EA') return unit === null ? '' : decimal(unit, 8);
+    return pack !== null
+      ? decimal(roundedDivide(pack, 10000n), 4)
+      : unit !== null
+        ? decimal(roundedDivide(unit * BigInt(size), 10000n), 4)
+        : '';
+  };
   useEffect(() => {
     let ignore = false;
-    setHistoryError('');
     api<SupplierReceipt[]>('supplier-receipts')
       .then((v) => {
         if (!ignore) setReceipts(v);
@@ -64,56 +73,86 @@ export function Receiving({
       ignore = true;
     };
   }, [data]);
-  let total = 0n;
-  let validTotal = lines.length > 0;
-  for (const line of lines) {
-    const link = links.find((l) => l.id === line.linkId);
-    const value = link
-      ? lineValue(
-          line.quantity,
-          line.unitCost,
-          line.entryUnit === 'ORDER' ? link.units_per_order : 1,
-        )
+  let goods = 0n;
+  let valid = lines.length > 0;
+  for (const l of lines) {
+    const { product, size } = packing(l.productId);
+    const value = product
+      ? receiptLine(l.quantity, Number(l.packSize), l.entryUnit, l.cost)
       : null;
-    if (value === null) validTotal = false;
-    else total += value;
+    if (
+      !value ||
+      !/^[1-9]\d{0,6}$/.test(l.packSize) ||
+      Number(l.packSize) > 1000000
+    )
+      valid = false;
+    else goods += value.total;
   }
+  const extra = scaled(adjustment, 2);
+  const calculated = extra === null ? null : roundedDivide(goods, 100n) + extra;
+  const entered = scaled(invoiceTotal, 2);
+  const matches =
+    valid &&
+    calculated !== null &&
+    calculated >= 0 &&
+    entered !== null &&
+    entered === calculated;
   return (
     <>
       <section className="panel form-panel">
-        <h2>Receive a supplier delivery</h2>
+        <h2>Receive delivery &amp; record invoice</h2>
         <p className="form-hint">
-          Record the invoice or delivery reference once, enter all products, and
-          post them together. Costs below are per individual unit. Separate
-          taxes and fees are not recorded here. No supplier balance, payment or
-          currency conversion is calculated.
+          Choose products directly—no supplier linking step is required. Posting
+          adds warehouse stock, saves the supplier link, and updates each item’s
+          latest arrival cost. Enter pack prices for packs, unit prices for
+          individual units.
         </p>
         <form
           onSubmit={async (e) => {
             e.preventDefault();
             const form = e.currentTarget;
-            const values = Object.fromEntries(new FormData(form));
+            const f = new FormData(form);
             const payload = {
-              ...values,
               supplierId,
+              warehouseId: f.get('warehouseId'),
+              reference: f.get('reference'),
+              receivedOn: f.get('receivedOn'),
+              invoiceDate: f.get('invoiceDate'),
+              ...(f.get('dueDate') ? { dueDate: f.get('dueDate') } : {}),
+              note: f.get('note'),
+              invoiceTotal,
+              invoiceAdjustment: adjustment,
+              adjustmentNote: f.get('adjustmentNote'),
+              paid,
+              ...(paid
+                ? {
+                    paymentDate: f.get('paymentDate'),
+                    paymentReference: f.get('paymentReference'),
+                  }
+                : {}),
               lines: lines.map((l) => ({
-                supplierProductId: l.linkId,
+                productId: l.productId,
                 quantity: l.quantity,
                 entryUnit: l.entryUnit,
-                expectedUnitsPerOrder: links.find((v) => v.id === l.linkId)
-                  ?.units_per_order,
-                unitCost: l.unitCost,
+                expectedUnitsPerOrder: packing(l.productId).size,
+                arrivalPackSize: Number(l.packSize),
+                ...(l.entryUnit === 'ORDER'
+                  ? { packCost: l.cost }
+                  : { unitCost: l.cost }),
               })),
             };
             if (
               await save(
                 'supplier-receipts',
                 payload,
-                'Delivery received. Warehouse stock and delivery history updated.',
+                'Delivery and invoice saved. Stock, arrival costs and supplier balance updated.',
                 true,
               )
             ) {
               setLines([]);
+              setInvoiceTotal('');
+              setAdjustment('0');
+              setPaid(false);
               form.reset();
             }
           }}
@@ -135,8 +174,8 @@ export function Receiving({
                 {data.suppliers
                   .filter((s) => s.active)
                   .map((s) => (
-                    <option value={s.id} key={s.id}>
-                      {s.legal_name} · {s.currency}
+                    <option key={s.id} value={s.id}>
+                      {s.legal_name}
                     </option>
                   ))}
               </select>
@@ -150,7 +189,7 @@ export function Receiving({
                 {data.locations
                   .filter((l) => l.type === 'WAREHOUSE')
                   .map((l) => (
-                    <option value={l.id} key={l.id}>
+                    <option key={l.id} value={l.id}>
                       {l.name}
                     </option>
                   ))}
@@ -160,12 +199,7 @@ export function Receiving({
           <div className="form-row">
             <label>
               Invoice / delivery reference
-              <input
-                name="reference"
-                required
-                maxLength={120}
-                placeholder="INV-2026-001"
-              />
+              <input name="reference" required maxLength={120} />
             </label>
             <label>
               Received on
@@ -177,58 +211,75 @@ export function Receiving({
               />
             </label>
           </div>
-          {supplierId && !links.length && (
-            <p className="form-hint">
-              Link active products to this supplier in Suppliers or Products
-              before receiving.
-            </p>
+          <div className="form-row">
+            <label>
+              Invoice date
+              <input
+                name="invoiceDate"
+                type="date"
+                required
+                defaultValue={today}
+              />
+            </label>
+            <label>
+              Due date override (optional)
+              <input name="dueDate" type="date" />
+            </label>
+          </div>
+          <p className="form-hint">
+            Due date defaults to invoice date + {supplier?.credit_days ?? 21}{' '}
+            credit days. A reminder appears two days before it is due.
+          </p>
+          {!products.length && (
+            <p className="form-hint">Create a product under Products first.</p>
           )}
-          {lines.map((line, index) => {
-            const link = links.find((l) => l.id === line.linkId);
-            const p = data.products.find((p) => p.id === link?.product_id);
+          {lines.map((l, index) => {
+            const { product, link, size, label } = packing(l.productId);
+            const enteredSize = Number(l.packSize);
+            const value =
+              /^[1-9]\d{0,6}$/.test(l.packSize) && enteredSize <= 1000000
+                ? receiptLine(l.quantity, enteredSize, l.entryUnit, l.cost)
+                : null;
             const update = (patch: Partial<DeliveryLine>) =>
               setLines((v) =>
-                v.map((l) => (l.key === line.key ? { ...l, ...patch } : l)),
+                v.map((row) =>
+                  row.key === l.key ? { ...row, ...patch } : row,
+                ),
               );
-            const qty =
-              /^[1-9]\d{0,14}$/.test(line.quantity) && link
-                ? BigInt(line.quantity) *
-                  BigInt(line.entryUnit === 'ORDER' ? link.units_per_order : 1)
-                : null;
-            const cost = link
-              ? lineValue(
-                  line.quantity,
-                  line.unitCost,
-                  line.entryUnit === 'ORDER' ? link.units_per_order : 1,
-                )
-              : null;
             return (
-              <div className="delivery-line" key={line.key}>
+              <div className="delivery-line" key={l.key}>
                 <label>
                   Delivery item {index + 1}
                   <select
-                    value={line.linkId}
                     required
-                    onChange={(e) => {
-                      const chosen = links.find((l) => l.id === e.target.value);
+                    value={l.productId}
+                    onChange={(e) =>
                       update({
-                        linkId: e.target.value,
-                        unitCost: chosen?.unit_cost ?? '',
+                        productId: e.target.value,
                         entryUnit: 'ORDER',
-                      });
-                    }}
+                        cost: defaultCost(e.target.value, 'ORDER'),
+                        packSize: String(packing(e.target.value).size),
+                      })
+                    }
                   >
                     <option value="" disabled>
-                      Choose linked product
+                      Choose product
                     </option>
-                    {links.map((l) => {
-                      const prod = data.products.find(
-                        (p) => p.id === l.product_id,
+                    {products.map((p) => {
+                      const old = data.supplierProducts.find(
+                        (v) =>
+                          v.product_id === p.id && v.supplier_id === supplierId,
                       );
                       return (
-                        <option value={l.id} key={l.id}>
-                          #{prod?.item_number} · {prod?.name}
-                          {l.supplier_sku ? ` (${l.supplier_sku})` : ''}
+                        <option
+                          value={p.id}
+                          key={p.id}
+                          disabled={old?.active === false}
+                        >
+                          #{p.item_number} · {p.name}
+                          {old?.active === false
+                            ? ' (supplier link inactive)'
+                            : ''}
                         </option>
                       );
                     })}
@@ -240,58 +291,92 @@ export function Receiving({
                     required
                     inputMode="numeric"
                     pattern="[1-9][0-9]{0,14}"
-                    value={line.quantity}
+                    value={l.quantity}
                     onChange={(e) => update({ quantity: e.target.value })}
                   />
                 </label>
                 <label>
-                  Ordering packaging
+                  Packaging
                   <select
-                    value={line.entryUnit}
+                    value={l.entryUnit}
                     onChange={(e) =>
-                      update({ entryUnit: e.target.value as 'ORDER' | 'EA' })
+                      update({
+                        entryUnit: e.target.value as 'ORDER' | 'EA',
+                        cost: defaultCost(
+                          l.productId,
+                          e.target.value as 'ORDER' | 'EA',
+                        ),
+                      })
                     }
                   >
                     <option value="ORDER">
-                      {link?.order_unit ?? 'Pack'} ×{' '}
-                      {link?.units_per_order ?? '?'}
+                      {label} × {l.packSize || '?'}
                     </option>
                     <option value="EA">
-                      {p?.unit_label ?? 'Individual units'}
+                      {product?.unit_label ?? 'Individual units'}
                     </option>
                   </select>
                 </label>
                 <label>
-                  Actual cost per unit (
-                  {supplier?.currency ?? data.tenant.currency_code})
+                  Units per arrival pack
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000000"
+                    step="1"
+                    required
+                    value={l.packSize}
+                    onChange={(e) =>
+                      update({
+                        packSize: e.target.value,
+                        ...(l.entryUnit === 'ORDER' ? { cost: '' } : {}),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  {l.entryUnit === 'ORDER'
+                    ? 'Arrival cost per pack'
+                    : 'Arrival cost per unit'}{' '}
+                  ({supplier?.currency ?? 'SCR'})
                   <input
                     required
-                    type="text"
                     inputMode="decimal"
-                    pattern="(0|[1-9][0-9]{0,14})(\.[0-9]{1,4})?"
-                    value={line.unitCost}
-                    onChange={(e) => update({ unitCost: e.target.value })}
+                    pattern={
+                      l.entryUnit === 'ORDER'
+                        ? '(0|[1-9][0-9]{0,14})(\\.[0-9]{1,4})?'
+                        : '(0|[1-9][0-9]{0,14})(\\.[0-9]{1,8})?'
+                    }
+                    value={l.cost}
+                    onChange={(e) => update({ cost: e.target.value })}
                   />
                 </label>
                 <div className="line-total">
                   <strong>
-                    {qty === null ? '—' : qty.toLocaleString('en-MU')} units
+                    {value ? value.units.toLocaleString('en-MU') : '—'} units
                   </strong>
                   <small>
-                    {cost === null
-                      ? 'Enter cost'
-                      : exactAmount(
-                          cost,
-                          supplier?.currency ?? data.tenant.currency_code,
-                        )}
+                    {value
+                      ? amount(
+                          decimal(value.total, 4),
+                          supplier?.currency ?? 'SCR',
+                        )
+                      : 'Enter arrival cost'}
                   </small>
+                  <small>
+                    {value
+                      ? `Unit cost ${amount(decimal(value.unitCost, 8), supplier?.currency ?? 'SCR')}`
+                      : ''}
+                  </small>
+                  {product && !link && (
+                    <small>Supplier link saved on posting</small>
+                  )}
                 </div>
                 <button
                   type="button"
                   className="text-button"
-                  aria-label={`Remove delivery item ${index + 1}`}
                   onClick={() =>
-                    setLines((v) => v.filter((l) => l.key !== line.key))
+                    setLines((v) => v.filter((row) => row.key !== l.key))
                   }
                 >
                   Remove
@@ -303,44 +388,127 @@ export function Receiving({
             type="button"
             className="secondary"
             disabled={
-              busy || !supplier?.active || !links.length || lines.length >= 100
+              busy ||
+              !supplier?.active ||
+              !products.length ||
+              lines.length >= 100
             }
             onClick={() =>
               setLines((v) => [
                 ...v,
                 {
                   key: crypto.randomUUID(),
-                  linkId: '',
+                  productId: '',
                   quantity: '1',
                   entryUnit: 'ORDER',
-                  unitCost: '',
+                  cost: '',
+                  packSize: '',
                 },
               ])
             }
           >
             ＋ Add delivery item
           </button>
+          <div className="invoice-check">
+            <h3 className="form-section">Check the invoice</h3>
+            <p>
+              Calculated goods value:{' '}
+              <strong>
+                {valid
+                  ? amount(decimal(goods, 4), supplier?.currency ?? 'SCR')
+                  : 'Add items and costs'}
+              </strong>
+            </p>
+            <div className="form-row">
+              <label>
+                Invoice charges / discount
+                <input
+                  inputMode="decimal"
+                  value={adjustment}
+                  onChange={(e) => setAdjustment(e.target.value)}
+                  placeholder="0; use a minus for discount"
+                />
+              </label>
+              <label>
+                Adjustment explanation
+                <input
+                  name="adjustmentNote"
+                  maxLength={500}
+                  required={extra !== null && extra !== 0n}
+                  placeholder="Tax, delivery charge or discount; not added to item costs"
+                />
+              </label>
+            </div>
+            <label>
+              Invoice total shown on paper
+              <input
+                required
+                inputMode="decimal"
+                value={invoiceTotal}
+                onChange={(e) => setInvoiceTotal(e.target.value)}
+                placeholder="Enter the total to check"
+              />
+            </label>
+            <p
+              role="status"
+              className={matches ? 'invoice-match' : 'form-hint'}
+            >
+              {matches
+                ? '✓ Invoice total matches'
+                : valid && calculated !== null
+                  ? `Calculated invoice total: ${amount(decimal(calculated, 2), supplier?.currency ?? 'SCR')}. Enter the matching paper total.`
+                  : 'Complete the delivery items first.'}
+            </p>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={paid}
+                onChange={(e) => setPaid(e.target.checked)}
+              />
+              Invoice already paid
+            </label>
+            {paid ? (
+              <div className="form-row">
+                <label>
+                  Payment date
+                  <input
+                    name="paymentDate"
+                    type="date"
+                    required
+                    defaultValue={today}
+                  />
+                </label>
+                <label>
+                  Payment reference
+                  <input
+                    name="paymentReference"
+                    maxLength={120}
+                    placeholder="Bank / cash reference"
+                  />
+                </label>
+              </div>
+            ) : (
+              <p className="form-hint">
+                This invoice will be unpaid and added to this supplier’s
+                outstanding balance.
+              </p>
+            )}
+          </div>
           <label className="spaced-label">
             Delivery note
-            <input name="note" maxLength={500} placeholder="Optional" />
+            <input name="note" maxLength={500} />
           </label>
           <div className="receipt-total">
-            <div>
-              <span>Recorded delivery value</span>
-              <strong>
-                {validTotal
-                  ? exactAmount(
-                      total,
-                      supplier?.currency ?? data.tenant.currency_code,
-                    )
-                  : 'Complete the item quantities and costs'}
-              </strong>
-            </div>
+            <strong>
+              {matches
+                ? amount(invoiceTotal, supplier?.currency ?? 'SCR')
+                : 'Check invoice total before posting'}
+            </strong>
             <button
               className="primary"
-              disabled={busy || !validTotal || !supplier?.active}
+              disabled={busy || !supplier?.active || !matches}
             >
-              {busy ? 'Receiving all items…' : 'Post delivery'}
+              {busy ? 'Posting…' : 'Post delivery & invoice'}
             </button>
           </div>
         </form>
@@ -366,7 +534,7 @@ export function Receiving({
                 <tr>
                   <th>REFERENCE / DATE</th>
                   <th>SUPPLIER / WAREHOUSE</th>
-                  <th>RECORDED VALUE</th>
+                  <th>GOODS / INVOICE TOTAL</th>
                   <th>STATUS</th>
                   <th />
                 </tr>
@@ -382,12 +550,17 @@ export function Receiving({
                       {r.supplier_name_snapshot}
                       <small>{r.warehouse_name_snapshot}</small>
                     </td>
-                    <td>{amount(r.total_cost, r.currency)}</td>
+                    <td>
+                      {amount(r.invoice_total, r.currency)}
+                      <small>Goods: {amount(r.total_cost, r.currency)}</small>
+                    </td>
                     <td>
                       <span className="pill">
                         {r.lines.some((l) => l.reversed)
                           ? 'HAS STOCK CORRECTIONS'
-                          : 'POSTED'}
+                          : r.payment_status === 'UNCONFIRMED'
+                            ? 'NEEDS REVIEW'
+                            : r.payment_status}
                       </span>
                     </td>
                     <td>
@@ -427,7 +600,7 @@ export function Receiving({
                     <th>PRODUCT</th>
                     <th>RECEIVED</th>
                     <th>INDIVIDUAL UNITS</th>
-                    <th>COST / UNIT</th>
+                    <th>ARRIVAL COST / UNIT COST</th>
                     <th>LINE TOTAL</th>
                   </tr>
                 </thead>
@@ -448,7 +621,13 @@ export function Receiving({
                           : 'individual units'}
                       </td>
                       <td>{l.base_quantity}</td>
-                      <td>{amount(l.unit_cost, r.currency)}</td>
+                      <td>
+                        {amount(l.entered_cost ?? l.unit_cost, r.currency)}
+                        <small>
+                          Per {l.cost_basis === 'ORDER' ? l.order_unit : 'unit'}{' '}
+                          · Unit cost {amount(l.unit_cost, r.currency)}
+                        </small>
+                      </td>
                       <td>{amount(l.line_total, r.currency)}</td>
                     </tr>
                   ))}
