@@ -35,7 +35,7 @@ async function fixture() {
     phone: '123',
     email: 'test@example.com',
     address: 'Test address',
-    currency: 'MUR',
+    currency: 'SCR',
   };
   const supplier = await saveSupplier(actor, supplierData);
   const productData = { sku: 'WATER', name: 'Water', unitsPerPack: 12 };
@@ -89,7 +89,7 @@ test('supplier identities, contacts, preferred links and cost histories survive 
   assert.equal(f.supplier.supplier_number, 1);
   const second = await saveSupplier(f.actor, {
     legalName: 'Other supplier',
-    currency: 'MUR',
+    currency: 'SCR',
   });
   assert.equal(second.supplier_number, 2);
   const otherLink = await saveSupplierProduct(f.actor, {
@@ -121,14 +121,12 @@ test('supplier identities, contacts, preferred links and cost histories survive 
     postReceipt(f.actor, randomUUID(), f.delivery),
     /inactive/,
   );
-  await assert.rejects(
-    saveSupplier(
-      f.actor,
-      { ...f.supplierData, currency: 'USD' },
-      f.supplier.id,
-    ),
-    /Currency cannot change/,
+  const relabelled = await saveSupplier(
+    f.actor,
+    { ...f.supplierData, currency: 'Rs (display)' },
+    f.supplier.id,
   );
+  assert.equal(relabelled.currency, 'Rs (display)');
   await assert.rejects(
     pool.query('UPDATE suppliers SET supplier_number=99 WHERE id=$1', [
       f.supplier.id,
@@ -314,7 +312,7 @@ test('late stock-posting failure rolls back delivery, first line, ledger, audit,
   }
 });
 
-test('cross-business, inactive links, foreign currency and invalid input cannot post deliveries', async () => {
+test('cross-business, inactive links and invalid input cannot post deliveries', async () => {
   const f = await fixture(),
     other = await fixture();
   await assert.rejects(
@@ -365,19 +363,6 @@ test('cross-business, inactive links, foreign currency and invalid input cannot 
     postReceipt(f.actor, randomUUID(), f.delivery),
     /inactive/,
   );
-  const usd = await saveSupplier(f.actor, {
-    legalName: 'US supplier',
-    currency: 'USD',
-  });
-  await saveSupplierProduct(f.actor, {
-    ...f.linkData,
-    supplierId: usd.id,
-    preferred: false,
-  });
-  await assert.rejects(
-    postReceipt(f.actor, randomUUID(), { ...f.delivery, supplierId: usd.id }),
-    /currencies to match/,
-  );
   for (const unitCost of ['-1', 'NaN', '1.12345'])
     await assert.rejects(
       postReceipt(f.actor, randomUUID(), {
@@ -399,4 +384,40 @@ test('cross-business, inactive links, foreign currency and invalid input cannot 
   );
   assert.equal((await receiptHistory(f.actor)).length, 0);
   assert.equal((await receiptHistory(other.actor)).length, 0);
+});
+
+test('currency is optional display text: different labels and edits never block or convert amounts', async () => {
+  const f = await fixture();
+  assert.equal((await overview(f.actor)).tenant.currency_code, 'SCR');
+  const changed = await saveSupplier(
+    f.actor,
+    { ...f.supplierData, currency: 'Rupees / display' },
+    f.supplier.id,
+  );
+  assert.equal(changed.currency, 'Rupees / display');
+  await postReceipt(f.actor, randomUUID(), f.delivery);
+  let history = await receiptHistory(f.actor);
+  assert.equal(history[0].currency, 'Rupees / display');
+  assert.equal(history[0].total_cost, '252.0000');
+  await saveSupplier(
+    f.actor,
+    { ...f.supplierData, currency: '' },
+    f.supplier.id,
+  );
+  await postReceipt(f.actor, randomUUID(), {
+    ...f.delivery,
+    reference: 'INV-EMPTY-LABEL',
+  });
+  history = await receiptHistory(f.actor);
+  assert.equal(
+    history.find((r) => r.reference === 'INV-EMPTY-LABEL').currency,
+    '',
+  );
+  assert.ok(history.every((r) => r.total_cost === '252.0000'));
+  const defaulted = await saveSupplier(f.actor, {
+    legalName: 'Default label supplier',
+  });
+  assert.equal(defaulted.currency, 'SCR');
+  const costs = await supplierCostHistory(f.actor, f.link.id);
+  assert.equal(costs[0].unit_cost, '5.2500');
 });

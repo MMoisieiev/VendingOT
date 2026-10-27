@@ -24,11 +24,7 @@ export const supplierInput = z
     phone: text,
     email: z.union([z.literal(''), z.email().max(254)]).default(''),
     address: z.string().trim().max(1000).default(''),
-    currency: z
-      .string()
-      .trim()
-      .toUpperCase()
-      .regex(/^[A-Z]{3}$/),
+    currency: z.string().trim().max(24).default('SCR'),
     active: z.boolean().default(true),
   })
   .strict();
@@ -76,18 +72,6 @@ export async function saveSupplier(actor: Actor, raw: unknown, id?: string) {
         [actor.tenantId, id],
       );
       if (!old.rowCount) throw new NotFoundException('Supplier not found.');
-      if (
-        old.rows[0].currency !== input.currency &&
-        (
-          await client.query(
-            'SELECT 1 FROM supplier_products WHERE tenant_id=$1 AND supplier_id=$2 LIMIT 1',
-            [actor.tenantId, id],
-          )
-        ).rowCount
-      )
-        throw new ConflictException(
-          'Currency cannot change after products are linked. Create a separate supplier record for another currency.',
-        );
     }
     const params = [
       actor.tenantId,

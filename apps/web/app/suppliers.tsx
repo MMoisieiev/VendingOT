@@ -145,10 +145,7 @@ export function Suppliers({
                 </button>
                 <button
                   className="primary"
-                  disabled={
-                    !supplier.active ||
-                    supplier.currency !== data.tenant.currency_code
-                  }
+                  disabled={!supplier.active}
                   onClick={() => onReceive(supplier.id)}
                 >
                   Receive delivery
@@ -176,12 +173,6 @@ export function Suppliers({
             <p className="form-hint address-text">
               {supplier.address || 'No address recorded.'}
             </p>
-            {supplier.currency !== data.tenant.currency_code && (
-              <p className="form-hint">
-                Receiving currently supports {data.tenant.currency_code} only.
-                Foreign-currency receiving needs an exchange-rate workflow.
-              </p>
-            )}
           </section>
           <SupplierLinks
             data={data}
@@ -286,21 +277,16 @@ function SupplierEditor({
           />
         </label>
         <label>
-          Currency
+          Currency label (display only)
           <input
             name="currency"
-            required
-            pattern="[A-Z]{3}"
-            maxLength={3}
+            maxLength={24}
             defaultValue={supplier?.currency ?? currency}
-            onChange={(e) => {
-              e.currentTarget.value = e.currentTarget.value.toUpperCase();
-            }}
           />
         </label>
         <p className="form-hint">
-          Three-letter currency code. Currency cannot change after products have
-          been linked.
+          Optional display text, such as SCR or Rs. It never changes amounts or
+          blocks receiving.
         </p>
         <label className="checkbox-label">
           <input

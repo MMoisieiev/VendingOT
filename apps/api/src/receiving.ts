@@ -62,17 +62,13 @@ export async function postReceipt(actor: Actor, key: string, raw: unknown) {
     }
     const supplier = (
       await client.query(
-        'SELECT s.*,l.id AS source_id,t.currency_code AS business_currency FROM suppliers s JOIN inventory_locations l ON l.supplier_id=s.id AND l.tenant_id=s.tenant_id JOIN tenants t ON t.id=s.tenant_id WHERE s.tenant_id=$1 AND s.id=$2 FOR SHARE OF s',
+        'SELECT s.*,l.id AS source_id FROM suppliers s JOIN inventory_locations l ON l.supplier_id=s.id AND l.tenant_id=s.tenant_id WHERE s.tenant_id=$1 AND s.id=$2 FOR SHARE OF s',
         [actor.tenantId, input.supplierId],
       )
     ).rows[0];
     if (!supplier) throw new NotFoundException('Supplier not found.');
     if (!supplier.active)
       throw new ConflictException('This supplier is inactive.');
-    if (supplier.currency !== supplier.business_currency)
-      throw new ConflictException(
-        'Receiving currently requires supplier and business currencies to match. No exchange rate is assumed.',
-      );
     const warehouse = (
       await client.query(
         "SELECT * FROM inventory_locations WHERE tenant_id=$1 AND id=$2 AND type='WAREHOUSE'",

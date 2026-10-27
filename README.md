@@ -39,10 +39,10 @@ Restart the API with `npm run dev -w @vendingot/api` and the web in another term
 ## Test the complete supplier → warehouse → machine flow
 
 1. In **Products**, edit Water: individual unit Bottle, pack name Pack, **12 units per pack**, default entry Packs. Set its unit/pack barcodes if available. Save it.
-2. Add an **Airport** price tier and enter selling prices separately: Default MUR 10 and Airport MUR 15 per bottle. These selling prices are independent of supplier purchase costs.
-3. In **Suppliers**, create a supplier with its legal name, contact person, phone, email, address and MUR currency. Open it.
-4. Under **Supplied products**, select Water. Enter the supplier’s product reference, ordering unit **Case**, **24 individual units per ordering pack**, and purchase cost **MUR 5.25 per individual bottle**. Mark it preferred if desired and save the link. A supplier case can differ from the product’s normal twelve-bottle pack.
-5. Click **Receive delivery**, select Main warehouse, enter a unique invoice/delivery reference and the received date. Add Water and enter **5 cases × 24 = 120 bottles**. Review **MUR 630** goods value. More linked products can be received on the same document.
+2. Add an **Airport** price tier and enter selling prices separately: Default SCR 10 and Airport SCR 15 per bottle. These selling prices are independent of supplier purchase costs.
+3. In **Suppliers**, create a supplier with its legal name, contact person, phone, email, address and SCR currency. Open it.
+4. Under **Supplied products**, select Water. Enter the supplier’s product reference, ordering unit **Case**, **24 individual units per ordering pack**, and purchase cost **SCR 5.25 per individual bottle**. Mark it preferred if desired and save the link. A supplier case can differ from the product’s normal twelve-bottle pack.
+5. Click **Receive delivery**, select Main warehouse, enter a unique invoice/delivery reference and the received date. Add Water and enter **5 cases × 24 = 120 bottles**. Review **SCR 630** goods value. More linked products can be received on the same document.
 6. Post the delivery. Warehouse stock increases by 120 bottles once. Expand **View items** in delivery history to see the supplier pack conversion, actual unit costs and original total.
 7. In **Machines**, add/open a machine assigned to Airport. Select **Fill up**, choose the warehouse, add Water and enter **7 product packs × 12 = 84 bottles**. Save the refill.
 8. Starting with no stock, the warehouse now has **36 bottles**. Existing balances change this total. The machine records an 84-bottle delivery, not current stock or sales.
@@ -51,7 +51,7 @@ Supplier links can also be managed by selecting **Edit** on a product. Each prod
 
 **Safety checks to try:** submit the same supplier/reference again (it must be rejected); deactivate a supplier (new receiving must stop); change a supplier’s ordering pack after preparing a delivery (the stale conversion must be rejected). Different suppliers may use the same invoice reference. Supplier/product names, packaging and costs are snapshotted on deliveries so later edits do not rewrite history.
 
-Both deliveries and refills post all lines or none, and retries cannot add/deduct stock twice. Existing stock corrections remain under **Reverse** in inventory history. Original delivery values remain visible with a stock-correction label; they are not supplier payable balances. Separate taxes, fees, discounts, payments, purchase orders and full delivery-wide reversal are future work. Receiving currently requires the supplier currency to match the business currency; no exchange rate is invented.
+Both deliveries and refills post all lines or none, and retries cannot add/deduct stock twice. Existing stock corrections remain under **Reverse** in inventory history. Original delivery values remain visible with a stock-correction label; they are not supplier payable balances. Separate taxes, fees, discounts, payments, purchase orders and full delivery-wide reversal are future work. Currency is optional display text with SCR as the default. Different labels never block receiving or change amounts; no conversion is performed.
 
 Use **Record movement → Opening / manual stock** only for opening/test stock, not normal supplier deliveries. Named suppliers are received through **Receiving**, with their reference and costs. Products and machines keep separate permanent number sequences; supplier IDs are also permanent. Keyboard shortcuts remain deferred.
 
@@ -114,9 +114,9 @@ Supplier endpoints:
 | POST   | `/supplier-receipts`                  | Receive all delivery lines with an Idempotency-Key               |
 | GET    | `/supplier-receipts`                  | Latest 50 deliveries, original values and stock-correction flags |
 
-Supplier input: `legalName`, `contactName`, `phone`, `email`, `address`, `currency`, `active`. Currency cannot change once products are linked. Deactivation retains records and history.
+Supplier input: `legalName`, `contactName`, `phone`, `email`, `address`, `currency`, `active`. The optional currency label can be edited at any time, including after products are linked; it has no posting or conversion rules. Deactivation retains records and history.
 
-Supplier-product input: `supplierId`, `productId`, `supplierSku`, `orderUnit`, `unitsPerOrder`, nullable `unitCost`, nullable `leadDays`, `preferred`, `active`. Unit cost is a decimal string per individual unit in the supplier currency. Each supplier/product pair has one ordering format in this milestone. Only one preferred supplier is allowed per product.
+Supplier-product input: `supplierId`, `productId`, `supplierSku`, `orderUnit`, `unitsPerOrder`, nullable `unitCost`, nullable `leadDays`, `preferred`, `active`. Unit cost is a decimal string per individual unit. Currency text is only a display label. Each supplier/product pair has one ordering format in this milestone. Only one preferred supplier is allowed per product.
 
 Receiving input: `supplierId`, `warehouseId`, `reference`, `receivedOn` (YYYY-MM-DD), optional `note`, and `lines: [{ supplierProductId, quantity, entryUnit, expectedUnitsPerOrder, unitCost }]`. `entryUnit` is `ORDER` or `EA`; quantity is a positive whole-number string. Actual cost per individual unit is required, even if the saved supplier cost is unset. The reference is unique per business/supplier, case-insensitively; use a distinct delivery reference for separate shipments.
 
@@ -129,3 +129,7 @@ Refill payloads use `sourceLocationId`, optional `note` and `lines: [{ productId
 ## Next milestones
 
 See [architecture and roadmap](docs/architecture.md). Mobile offline sync, cash custody, accounting, machine hardware commands, notifications and subscriptions are not implemented in this milestone.
+
+## SCR display labels
+
+Island Vending uses SCR. Currency is an optional text label (for example SCR or Rs), not an ISO code, a conversion setting or a reason to disable receiving. Labels can be changed after products are linked; amounts are never converted or recalculated. Existing receipt labels remain snapshots of the text shown when posted. Migration 005 corrects the earlier development-only MUR assumption to SCR for the seeded Island Vending business and its inherited MUR supplier/history labels. It changes no numeric amount, quantity, ID or invoice reference, records a correction audit event, and restores immutable-record protections before committing. Other businesses and intentional non-MUR labels are untouched.

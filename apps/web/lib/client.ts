@@ -154,7 +154,7 @@ export const prettyQuantity = (value: string) =>
 export const amount = (value: string | null | undefined, currency: string) => {
   if (value == null) return 'Not set';
   const match = /^(\d+)(?:\.(\d+))?$/.exec(value);
-  if (!match) return `${currency} ${value}`;
+  if (!match) return `${currency ? currency + ' ' : ''}${value}`;
   const fraction = (match[2] ?? '').replace(/0+$/, '').padEnd(2, '0');
-  return `${currency} ${BigInt(match[1]).toLocaleString('en-MU')}.${fraction}`;
+  return `${currency ? currency + ' ' : ''}${BigInt(match[1]).toLocaleString('en-MU')}.${fraction}`;
 };

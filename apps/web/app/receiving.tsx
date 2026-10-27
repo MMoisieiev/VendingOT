@@ -22,7 +22,7 @@ function lineValue(quantity: string, unitCost: string, multiplier: number) {
 function exactAmount(scaled: bigint, currency: string) {
   const integer = scaled / 10000n;
   const fraction = (scaled % 10000n).toString().padStart(4, '0');
-  return `${currency} ${integer.toLocaleString('en-MU')}.${fraction}`;
+  return `${currency ? currency + ' ' : ''}${integer.toLocaleString('en-MU')}.${fraction}`;
 }
 export function Receiving({
   data,
@@ -135,11 +135,7 @@ export function Receiving({
                 {data.suppliers
                   .filter((s) => s.active)
                   .map((s) => (
-                    <option
-                      value={s.id}
-                      key={s.id}
-                      disabled={s.currency !== data.tenant.currency_code}
-                    >
+                    <option value={s.id} key={s.id}>
                       {s.legal_name} · {s.currency}
                     </option>
                   ))}
@@ -307,11 +303,7 @@ export function Receiving({
             type="button"
             className="secondary"
             disabled={
-              busy ||
-              !supplier?.active ||
-              !links.length ||
-              lines.length >= 100 ||
-              supplier.currency !== data.tenant.currency_code
+              busy || !supplier?.active || !links.length || lines.length >= 100
             }
             onClick={() =>
               setLines((v) => [
@@ -346,12 +338,7 @@ export function Receiving({
             </div>
             <button
               className="primary"
-              disabled={
-                busy ||
-                !validTotal ||
-                !supplier?.active ||
-                supplier.currency !== data.tenant.currency_code
-              }
+              disabled={busy || !validTotal || !supplier?.active}
             >
               {busy ? 'Receiving all items…' : 'Post delivery'}
             </button>
