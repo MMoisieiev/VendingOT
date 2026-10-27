@@ -23,8 +23,8 @@ export const productInput = z
     defaultEntryUnit: z.enum(['EA', 'PACK']).default('EA'),
     barcode: optionalLabel,
     packBarcode: optionalLabel,
-    supplierName: optionalLabel,
-    purchaseCost: money.nullable().default(null),
+    supplierName: optionalLabel.optional(),
+    purchaseCost: money.nullable().optional(),
     prices: z
       .array(z.object({ tierId: z.uuid(), amount: money }).strict())
       .max(50)
@@ -71,6 +71,14 @@ export async function saveProduct(actor: Actor, raw: unknown, id?: string) {
       if (tiers.rowCount !== data.prices.length)
         throw new NotFoundException('Price tier not found in this business.');
     }
+    const legacy = id
+      ? (
+          await client.query(
+            'SELECT supplier_name,purchase_cost FROM products WHERE tenant_id=$1 AND id=$2',
+            [actor.tenantId, id],
+          )
+        ).rows[0]
+      : null;
     const params = [
       actor.tenantId,
       data.sku,
@@ -81,8 +89,10 @@ export async function saveProduct(actor: Actor, raw: unknown, id?: string) {
       data.defaultEntryUnit,
       data.barcode,
       data.packBarcode,
-      data.supplierName,
-      data.purchaseCost,
+      data.supplierName ?? legacy?.supplier_name ?? '',
+      data.purchaseCost === undefined
+        ? (legacy?.purchase_cost ?? null)
+        : data.purchaseCost,
     ];
     const result = id
       ? await client.query(

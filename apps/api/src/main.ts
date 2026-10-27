@@ -16,6 +16,12 @@ import { NestFactory } from '@nestjs/core';
 import { z } from 'zod';
 import { createTier, saveProduct, saveMachine, machineInput } from './catalog';
 import { machineHistory, postRefill } from './machines';
+import {
+  saveSupplier,
+  saveSupplierProduct,
+  supplierCostHistory,
+} from './suppliers';
+import { postReceipt, receiptHistory } from './receiving';
 import { devActor, pool } from './db';
 import {
   createLocation,
@@ -47,7 +53,7 @@ class ApiErrors implements ExceptionFilter {
       response.status(409).json({
         code: 'DUPLICATE_CODE',
         message:
-          'That SKU, serial number, asset code, location code or tier name is already in use.',
+          'That SKU, serial number, asset code, location code, supplier name, delivery reference or tier name is already in use.',
       });
     } else {
       console.error(error);
@@ -79,6 +85,32 @@ class ApiController {
   }
   @Post('price-tiers') tier(@Body() body: unknown) {
     return createTier(devActor, body);
+  }
+  @Post('suppliers') supplier(@Body() body: unknown) {
+    return saveSupplier(devActor, body);
+  }
+  @Post('suppliers/:id') updateSupplier(
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return saveSupplier(devActor, body, parse(z.uuid(), id));
+  }
+  @Post('supplier-products') supplierProduct(@Body() body: unknown) {
+    return saveSupplierProduct(devActor, body);
+  }
+  @Get('supplier-products/:id/cost-history') costHistory(
+    @Param('id') id: string,
+  ) {
+    return supplierCostHistory(devActor, parse(z.uuid(), id));
+  }
+  @Post('supplier-receipts') receive(
+    @Body() body: unknown,
+    @Headers('idempotency-key') key: string = '',
+  ) {
+    return postReceipt(devActor, key, body);
+  }
+  @Get('supplier-receipts') receipts() {
+    return receiptHistory(devActor);
   }
   @Post('machines') machine(@Body() body: unknown) {
     return saveMachine(devActor, parse(machineInput, body));

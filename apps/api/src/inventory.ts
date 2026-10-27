@@ -60,7 +60,7 @@ export async function overview(actor: Actor) {
       [actor.tenantId],
     );
     const locations = await client.query(
-      'SELECT id,code,name,type,machine_id FROM inventory_locations WHERE tenant_id=$1 ORDER BY type,code',
+      'SELECT id,code,name,type,machine_id,supplier_id FROM inventory_locations WHERE tenant_id=$1 ORDER BY type,code',
       [actor.tenantId],
     );
     const balances = await client.query(
@@ -91,8 +91,18 @@ export async function overview(actor: Actor) {
       'SELECT product_id,price_tier_id,amount::text FROM product_prices WHERE tenant_id=$1',
       [actor.tenantId],
     );
+    const suppliers = await client.query(
+      'SELECT * FROM suppliers WHERE tenant_id=$1 ORDER BY supplier_number',
+      [actor.tenantId],
+    );
+    const supplierProducts = await client.query(
+      'SELECT * FROM supplier_products WHERE tenant_id=$1 ORDER BY updated_at,id',
+      [actor.tenantId],
+    );
     await client.query('COMMIT');
     return {
+      suppliers: suppliers.rows,
+      supplierProducts: supplierProducts.rows,
       machines: machines.rows,
       tiers: tiers.rows,
       prices: prices.rows,
@@ -216,7 +226,7 @@ export async function postMovement(
     if (data.fromLocationId === data.toLocationId)
       throw new BadRequestException('Source and destination must differ.');
     const locations = await client.query(
-      'SELECT id,type FROM inventory_locations WHERE tenant_id=$1 AND id=ANY($2::uuid[])',
+      'SELECT id,type,supplier_id FROM inventory_locations WHERE tenant_id=$1 AND id=ANY($2::uuid[])',
       [actor.tenantId, [data.fromLocationId, data.toLocationId]],
     );
     const source = locations.rows.find((row) => row.id === data.fromLocationId);
@@ -228,6 +238,15 @@ export async function postMovement(
     if (!source || !target || !product.rowCount)
       throw new NotFoundException(
         'Product or location not found in this business.',
+      );
+    if (
+      !reversalOf &&
+      data.kind === 'RECEIPT' &&
+      source.supplier_id &&
+      !transaction
+    )
+      throw new BadRequestException(
+        'Use supplier receiving to record this delivery with its reference and costs.',
       );
     const enteredQuantity = data.quantity;
     const entryUnit = data.entryUnit ?? 'EA';

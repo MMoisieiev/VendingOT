@@ -2,7 +2,7 @@
 
 An operations platform for Island Vending, starting with traceable stock movements.
 
-**Current milestone:** product and machine records with permanent incremental IDs, pack-aware stock entry, explicit per-product price tiers, and multi-item machine refills. Warehouse and van stock are tracked; machines show delivery history, never a claimed current stock balance.
+**Current milestone:** supplier records and product–supplier links, atomic multi-item supplier receiving, product and machine records with permanent incremental IDs, pack-aware stock entry, explicit per-product price tiers, and multi-item machine refills. Warehouse and van stock are tracked; machines show delivery history, never a claimed current stock balance.
 
 This is a local development foundation, with synthetic data and an explicit seeded development owner. It has **no login or production authentication**. Keep the web and API on loopback and do not expose them publicly or enter real business data yet. Tenant-scoped data and isolation tests establish the model; full authentication, permission enforcement and production security remain future work.
 
@@ -34,22 +34,26 @@ npm run db:migrate
 npm run db:seed
 ```
 
-Restart the API with `npm run dev -w @vendingot/api` and the web in another terminal with `npm run dev -w @vendingot/web`. These separate commands work in Windows PowerShell too. Do not delete your database volume. Migration 002 retains products, machines and transaction history while assigning permanent numbers to existing records. Existing products keep a one-unit pack until you configure their actual packaging; fresh seed records use twelve-bottle water packs.
+Restart the API with `npm run dev -w @vendingot/api` and the web in another terminal with `npm run dev -w @vendingot/web`. These separate commands work in Windows PowerShell too. Do not delete your database volume. Migrations retain products, machines and transaction history. Migration 002 assigns permanent numbers; migration 004 converts existing nonempty supplier names into supplier records and links, merging case/space variants within each business. Existing products keep a one-unit pack until you configure their actual packaging; fresh seed records use twelve-bottle water packs.
 
-## Try products, pricing and a machine refill
+## Test the complete supplier → warehouse → machine flow
 
-1. Open **Products**. Add a price tier named **Airport**.
-2. Edit Water: unit name Bottle, pack name Pack, **12 units per pack**, default entry Packs. Enter supplier, unit/pack barcodes and purchase cost per individual unit if known.
-3. Enter selling prices independently: **Default = MUR 10**, **Airport = MUR 15** per bottle. Blank means not set; no automatic markup or fallback applies.
-4. Add a machine in **Machines**, choose the Airport price tier, and fill in its name, site, serial number, manufacturer and model. Its machine ID is assigned automatically.
-5. In **Record movement**, receive **10 packs** of water into the warehouse (120 bottles). If using a van, transfer the load to that van first.
-6. Open the machine, select **Fill up**, choose the source warehouse or van once, and press **Add item**.
-7. Select Water, enter **7 packs** and review **7 × 12 = 84 units**. Add other products to the same refill if needed, then save.
-8. The source loses 84 bottles; machine history records seven packs and 84 bottles. With a fresh empty warehouse and this one receipt/refill, 36 bottles remain. Existing stock changes that total. No machine stock-on-hand figure is displayed.
+1. In **Products**, edit Water: individual unit Bottle, pack name Pack, **12 units per pack**, default entry Packs. Set its unit/pack barcodes if available. Save it.
+2. Add an **Airport** price tier and enter selling prices separately: Default MUR 10 and Airport MUR 15 per bottle. These selling prices are independent of supplier purchase costs.
+3. In **Suppliers**, create a supplier with its legal name, contact person, phone, email, address and MUR currency. Open it.
+4. Under **Supplied products**, select Water. Enter the supplier’s product reference, ordering unit **Case**, **24 individual units per ordering pack**, and purchase cost **MUR 5.25 per individual bottle**. Mark it preferred if desired and save the link. A supplier case can differ from the product’s normal twelve-bottle pack.
+5. Click **Receive delivery**, select Main warehouse, enter a unique invoice/delivery reference and the received date. Add Water and enter **5 cases × 24 = 120 bottles**. Review **MUR 630** goods value. More linked products can be received on the same document.
+6. Post the delivery. Warehouse stock increases by 120 bottles once. Expand **View items** in delivery history to see the supplier pack conversion, actual unit costs and original total.
+7. In **Machines**, add/open a machine assigned to Airport. Select **Fill up**, choose the warehouse, add Water and enter **7 product packs × 12 = 84 bottles**. Save the refill.
+8. Starting with no stock, the warehouse now has **36 bottles**. Existing balances change this total. The machine records an 84-bottle delivery, not current stock or sales.
 
-A refill is all-or-nothing. If any line has insufficient stock, nothing posts. Retrying the same command cannot deduct twice. Pack sizes and tier prices are snapshotted, so later edits do not rewrite posted quantities or prices. Refills record deliveries, not sales or revenue. Existing movement corrections remain available through **Reverse** in inventory history.
+Supplier links can also be managed by selecting **Edit** on a product. Each product may have several suppliers and one preferred supplier. Link costs and actual delivery costs are separate: receiving does not silently overwrite your supplier’s saved cost. Supplier cost changes are visible through **Cost history**.
 
-Products and machines have separate permanent number sequences per business. Item #1 and machine #1 can coexist. Numbers cannot be edited or reused by deleting a record. Keyboard shortcuts are deferred.
+**Safety checks to try:** submit the same supplier/reference again (it must be rejected); deactivate a supplier (new receiving must stop); change a supplier’s ordering pack after preparing a delivery (the stale conversion must be rejected). Different suppliers may use the same invoice reference. Supplier/product names, packaging and costs are snapshotted on deliveries so later edits do not rewrite history.
+
+Both deliveries and refills post all lines or none, and retries cannot add/deduct stock twice. Existing stock corrections remain under **Reverse** in inventory history. Original delivery values remain visible with a stock-correction label; they are not supplier payable balances. Separate taxes, fees, discounts, payments, purchase orders and full delivery-wide reversal are future work. Receiving currently requires the supplier currency to match the business currency; no exchange rate is invented.
+
+Use **Record movement → Opening / manual stock** only for opening/test stock, not normal supplier deliveries. Named suppliers are received through **Receiving**, with their reference and costs. Products and machines keep separate permanent number sequences; supplier IDs are also permanent. Keyboard shortcuts remain deferred.
 
 ## Verification
 
@@ -60,7 +64,7 @@ npm run build
 npm audit --audit-level=high
 ```
 
-Integration tests require the migrated database. Each creates its own synthetic tenant and never resets development records. Tests cover permanent/concurrent numbering, manual tier prices, seven-pack conversion, historical snapshots, atomic multi-line refills, cross-business access, stock posting, concurrent retries, reversals and immutable ledger constraints. Test fixtures remain in the local database under separate tenants.
+Integration tests require the migrated database. Each creates its own synthetic tenant and never resets development records. Tests cover permanent numbering, supplier contacts/status, multiple suppliers and preferred links, cost history, supplier-specific ordering packs, exact actual delivery costs, duplicate invoices/retries, atomic receipt/refill rollback, cross-business isolation, stock posting, reversals and immutable snapshots. Test fixtures remain in the local database under separate tenants.
 
 The root dependency override pins Multer to 2.5.0 to address GHSA-q7qp-rjg7-q26m while NestJS 11 pins an affected release. Keep the override until the upstream dependency is patched; CI checks for high-severity advisories.
 
@@ -99,7 +103,24 @@ Additional endpoints:
 | GET    | `/machines/:id/history` | Latest 200 delivery/removal lines, including legacy movements                                                  |
 | POST   | `/machines/:id/refills` | Atomically post multiple products from one warehouse or van                                                    |
 
-Product fields include `sku`, `name`, `unitLabel`, `packLabel`, `unitsPerPack`, `defaultEntryUnit` (`EA` or `PACK`), `barcode`, `packBarcode`, `supplierName`, nullable `purchaseCost`, and `prices: [{ tierId, amount }]`. Costs and prices are decimal strings per individual unit. Omit a tier price to leave it unset.
+Supplier endpoints:
+
+| Method | Route                                 | Purpose                                                          |
+| ------ | ------------------------------------- | ---------------------------------------------------------------- |
+| POST   | `/suppliers`                          | Create supplier and automatic permanent number                   |
+| POST   | `/suppliers/:id`                      | Edit contact information or deactivate                           |
+| POST   | `/supplier-products`                  | Create/update a supplier–product link                            |
+| GET    | `/supplier-products/:id/cost-history` | Latest 100 saved cost changes                                    |
+| POST   | `/supplier-receipts`                  | Receive all delivery lines with an Idempotency-Key               |
+| GET    | `/supplier-receipts`                  | Latest 50 deliveries, original values and stock-correction flags |
+
+Supplier input: `legalName`, `contactName`, `phone`, `email`, `address`, `currency`, `active`. Currency cannot change once products are linked. Deactivation retains records and history.
+
+Supplier-product input: `supplierId`, `productId`, `supplierSku`, `orderUnit`, `unitsPerOrder`, nullable `unitCost`, nullable `leadDays`, `preferred`, `active`. Unit cost is a decimal string per individual unit in the supplier currency. Each supplier/product pair has one ordering format in this milestone. Only one preferred supplier is allowed per product.
+
+Receiving input: `supplierId`, `warehouseId`, `reference`, `receivedOn` (YYYY-MM-DD), optional `note`, and `lines: [{ supplierProductId, quantity, entryUnit, expectedUnitsPerOrder, unitCost }]`. `entryUnit` is `ORDER` or `EA`; quantity is a positive whole-number string. Actual cost per individual unit is required, even if the saved supplier cost is unset. The reference is unique per business/supplier, case-insensitively; use a distinct delivery reference for separate shipments.
+
+Product fields include `sku`, `name`, `unitLabel`, `packLabel`, `unitsPerPack`, `defaultEntryUnit` (`EA` or `PACK`), `barcode`, `packBarcode`, `prices: [{ tierId, amount }]` and the supplier links described above. Costs and prices are decimal strings per individual unit. Omit a tier price to leave it unset. Legacy `supplierName` and `purchaseCost` values remain preserved for compatibility; supplier links are authoritative for new purchasing.
 
 Stock payloads additionally accept `entryUnit` (`EA` by default or `PACK`) and `expectedUnitsPerPack`. The server calculates base quantities and rejects stale pack conversions.
 

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { amount, Overview, Product, Save } from '../lib/client';
+import { SupplierLinks } from './suppliers';
 
 export function Catalog({
   data,
@@ -246,26 +247,11 @@ export function Catalog({
                 />
               </label>
             </div>
-            <label>
-              Supplier
-              <input
-                name="supplierName"
-                maxLength={120}
-                defaultValue={edit?.supplier_name}
-                placeholder="Supplier name"
-              />
-            </label>
-            <label>
-              Purchase cost per unit ({data.tenant.currency_code})
-              <input
-                name="purchaseCost"
-                type="number"
-                min="0"
-                step="0.0001"
-                defaultValue={edit?.purchase_cost ?? ''}
-                placeholder="Optional"
-              />
-            </label>
+            <p className="form-hint">
+              Supplier contacts, ordering packs and purchase costs are managed
+              through supplier links below. Save a new product first, then
+              select Edit to link its suppliers.
+            </p>
             <h3 className="form-section">
               Selling prices · {data.tenant.currency_code} per unit
             </h3>
@@ -298,6 +284,15 @@ export function Catalog({
           </form>
         </section>
       </div>
+      {edit && (
+        <SupplierLinks
+          key={edit.id}
+          data={data}
+          save={save}
+          busy={busy}
+          productId={edit.id}
+        />
+      )}
     </>
   );
 }

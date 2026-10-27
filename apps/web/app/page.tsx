@@ -5,7 +5,16 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { api, Overview, Movement, prettyQuantity } from '../lib/client';
 import { Catalog } from './catalog';
 import { Machines } from './machines';
-type Tab = 'Overview' | 'Inventory' | 'Products' | 'Locations' | 'Machines';
+import { Suppliers } from './suppliers';
+import { Receiving } from './receiving';
+type Tab =
+  | 'Overview'
+  | 'Inventory'
+  | 'Products'
+  | 'Locations'
+  | 'Machines'
+  | 'Suppliers'
+  | 'Receiving';
 
 const locationType = (type: string) =>
   ({
@@ -18,6 +27,7 @@ const locationType = (type: string) =>
 export default function Home() {
   const [data, setData] = useState<Overview | null>(null);
   const [tab, setTab] = useState<Tab>('Overview');
+  const [receivingSupplier, setReceivingSupplier] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -159,6 +169,8 @@ export default function Home() {
               'Inventory',
               'Products',
               'Machines',
+              'Suppliers',
+              'Receiving',
               'Locations',
             ] as Tab[]
           ).map((name, i) => (
@@ -167,7 +179,9 @@ export default function Home() {
               className={tab === name ? 'nav-item active' : 'nav-item'}
               onClick={() => setTab(name)}
             >
-              <span aria-hidden="true">{['◫', '▤', '▦', '▣', '⌖'][i]}</span>
+              <span aria-hidden="true">
+                {['◫', '▤', '▦', '▣', '◇', '↓', '⌖'][i]}
+              </span>
               {name}
               {tab === name && <span className="nav-dot" />}
             </button>
@@ -213,7 +227,11 @@ export default function Home() {
                       ? 'Your product catalog.'
                       : tab === 'Machines'
                         ? 'Your machines, one place.'
-                        : 'A place for every product.'}
+                        : tab === 'Suppliers'
+                          ? 'Your supplier directory.'
+                          : tab === 'Receiving'
+                            ? 'Deliveries, recorded once.'
+                            : 'A place for every product.'}
               </h1>
               <p className="subtitle">
                 {tab === 'Overview'
@@ -224,10 +242,16 @@ export default function Home() {
                       ? 'Manage the products moving through your business.'
                       : tab === 'Machines'
                         ? 'Machine details, price tiers, and refill history.'
-                        : 'Warehouses and delivery vehicles.'}
+                        : tab === 'Suppliers'
+                          ? 'Contacts, ordering packs and product purchase costs.'
+                          : tab === 'Receiving'
+                            ? 'Receive supplier deliveries into warehouse stock.'
+                            : 'Warehouses and delivery vehicles.'}
               </p>
             </div>
-            {tab !== 'Machines' && (
+            {(tab === 'Overview' ||
+              tab === 'Inventory' ||
+              tab === 'Locations') && (
               <button
                 className="primary"
                 disabled={!data || busy}
@@ -508,6 +532,25 @@ export default function Home() {
               {tab === 'Products' && (
                 <Catalog data={data} save={save} busy={busy} />
               )}
+              {tab === 'Suppliers' && (
+                <Suppliers
+                  data={data}
+                  save={save}
+                  busy={busy}
+                  onReceive={(id) => {
+                    setReceivingSupplier(id);
+                    setTab('Receiving');
+                  }}
+                />
+              )}
+              {tab === 'Receiving' && (
+                <Receiving
+                  data={data}
+                  save={save}
+                  busy={busy}
+                  initialSupplierId={receivingSupplier}
+                />
+              )}
               {tab === 'Machines' && (
                 <Machines data={data} save={save} busy={busy} />
               )}
@@ -640,7 +683,9 @@ export default function Home() {
                   value={kind}
                   onChange={(e) => setKind(e.target.value)}
                 >
-                  <option value="RECEIPT">Supplier receipt → warehouse</option>
+                  <option value="RECEIPT">
+                    Opening / manual stock → warehouse
+                  </option>
                   <option value="TRANSFER">Transfer between locations</option>
                 </select>
               </label>
@@ -672,7 +717,7 @@ export default function Home() {
                     {data.locations
                       .filter((l) =>
                         kind === 'RECEIPT'
-                          ? l.type === 'EXTERNAL'
+                          ? l.type === 'EXTERNAL' && !l.supplier_id
                           : l.type === 'WAREHOUSE' || l.type === 'VEHICLE',
                       )
                       .map((l) => (

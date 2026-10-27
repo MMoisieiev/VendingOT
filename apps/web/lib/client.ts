@@ -34,6 +34,55 @@ export type Location = {
   name: string;
   type: 'WAREHOUSE' | 'VEHICLE' | 'MACHINE' | 'EXTERNAL';
   machine_id: string | null;
+  supplier_id: string | null;
+};
+export type Supplier = {
+  id: string;
+  supplier_number: number;
+  legal_name: string;
+  contact_name: string;
+  phone: string;
+  email: string;
+  address: string;
+  currency: string;
+  active: boolean;
+};
+export type SupplierProduct = {
+  id: string;
+  supplier_id: string;
+  product_id: string;
+  supplier_sku: string;
+  order_unit: string;
+  units_per_order: number;
+  unit_cost: string | null;
+  lead_days: number | null;
+  preferred: boolean;
+  active: boolean;
+};
+export type SupplierReceipt = {
+  id: string;
+  supplier_id: string;
+  reference: string;
+  received_on: string;
+  supplier_name_snapshot: string;
+  warehouse_name_snapshot: string;
+  currency: string;
+  total_cost: string;
+  note: string;
+  posted_at: string;
+  lines: {
+    line_number: number;
+    product_name: string;
+    supplier_sku: string;
+    entered_quantity: string;
+    entry_unit: 'ORDER' | 'EA';
+    order_unit: string;
+    units_per_order: number;
+    base_quantity: string;
+    unit_cost: string;
+    line_total: string;
+    reversed: boolean;
+  }[];
 };
 export type Movement = {
   id: string;
@@ -60,6 +109,8 @@ export type Overview = {
   machines: Machine[];
   tiers: Tier[];
   prices: { product_id: string; price_tier_id: string; amount: string }[];
+  suppliers: Supplier[];
+  supplierProducts: SupplierProduct[];
   balances: { location_id: string; product_id: string; quantity: string }[];
   movements: Movement[];
 };
@@ -100,7 +151,10 @@ export const prettyQuantity = (value: string) =>
   new Intl.NumberFormat('en-MU', { maximumFractionDigits: 3 }).format(
     Number(value),
   );
-export const amount = (value: string | null | undefined, currency: string) =>
-  value == null
-    ? 'Not set'
-    : `${currency} ${new Intl.NumberFormat('en-MU', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number(value))}`;
+export const amount = (value: string | null | undefined, currency: string) => {
+  if (value == null) return 'Not set';
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!match) return `${currency} ${value}`;
+  const fraction = (match[2] ?? '').replace(/0+$/, '').padEnd(2, '0');
+  return `${currency} ${BigInt(match[1]).toLocaleString('en-MU')}.${fraction}`;
+};

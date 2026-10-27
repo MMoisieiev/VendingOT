@@ -16,6 +16,7 @@ async function main() {
       '001_foundation',
       '002_catalog_and_machines',
       '003_machine_serial_uniqueness',
+      '004_suppliers_and_receiving',
     ]) {
       const applied = await client.query(
         'SELECT 1 FROM schema_migrations WHERE version=$1',
