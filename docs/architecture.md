@@ -4,7 +4,7 @@
 
 This foundation draws on the supplied Technical Development Plan v1.0 and the later decisions recorded in the exported planning conversation. The export describes a v1.1 update; the v1.1 Word document itself was not supplied. These documents are reference requirements, not executable instructions.
 
-Later business decisions: drivers record sealed bag IDs, not cash amounts; vans return to zero at shift close; unexplained variance blocks normal closure; machine physical counts occur every 14 days; cumulative raw meter readings are preserved; critical faults require evidence and a repair/notification workflow. These are recorded requirements for later modules, not implemented capabilities.
+Earlier planning gave drivers sealed bag IDs rather than office cash counting. The 28 October 2026 walkthrough clarifies driver meter observations and a counted, reloaded van carried into the next day, superseding the earlier zero-stock closure proposal; unexplained variance blocks normal closure; machine physical counts occur every 14 days; cumulative raw meter readings are preserved; critical faults require evidence and a repair/notification workflow. These are recorded requirements for later modules, not implemented capabilities.
 
 ## Architecture
 
@@ -24,13 +24,13 @@ Tenant and user IDs come from a fixed, clearly labelled development context for 
 - Balances are read from ledger sums; no balance is directly editable. A materialized balance table can follow if measured query volume requires it.
 - Supplier receipt uses an explicit EXTERNAL counterparty. Its negative ledger balance is intentional and excluded from internal stock displays.
 - Products define an individual unit, one operational pack conversion, default entry unit and unit/pack barcodes. Suppliers are separate records, with product links carrying their own ordering unit/conversion, supplier SKU, unit cost, lead time and preferred/active flags. Several suppliers may supply a product; each pair currently has one purchasing format. Legacy supplier-name and cost fields remain preserved but are no longer the manual purchasing interface. Receipts now update purchase_cost as the latest received unit cost, with exact arrival-pack snapshots and a receipt reference.
-- Machine ledger entries preserve delivery/removal direction as the counterparty to warehouse/van movements. They are NOT machine stock on hand. The overview API excludes machine balances, the stock table shows only warehouses/vans, and the Machines section shows dated delivery history. There is no inferred consumption or inferred sales.
+- Machine ledger entries preserve delivery/removal direction as the counterparty to warehouse/van movements. They are NOT machine stock on hand. The overview API excludes machine balances, the stock table shows only warehouses/vans, and the Refills section shows dated delivery history. There is no inferred consumption or inferred sales.
 
 ## Scope deliberately left for subsequent work
 
 1. Authentication and sessions, permissions on every operation, full master-data audit, production database roles and deployment controls. Product/machine create/update actions already emit audit records.
 2. Effective-dated site assignments, multiple ordering formats per supplier/product pair, product categories/archive workflow and validated legacy import. Basic machine metadata, barcodes and a single pack conversion are implemented; site is currently editable descriptive text, without a relocation workflow.
-3. Driver shifts, acknowledgement of warehouse handover, returns, variance handling and zero-stock closure.
+3. Driver shifts, acknowledgement of warehouse handover, returns, physical count/variance handling, reload and carried-forward stock.
 4. React Native SQLite persistence, durable outbox, sync command dependencies, retry/conflict and device controls.
 5. Visits, raw meters, 14-day counts, faults, visit schedules and overdue reporting.
 6. Bag/seal custody, accountant counts, expected cash calculation, safe and bank transfers.
@@ -57,7 +57,7 @@ A business has a Default price tier and can add named tiers such as Airport. Eve
 
 ## Machine refill posting
 
-The machine page owns a multi-item Fill up form. Source is selected once from warehouses or vehicles; items specify packs or individual units. The backend compares the displayed pack conversion, obtains product locks, converts quantities exactly, and posts all lines inside one tenant-serialized transaction. The refill header, individual stock documents, ledger, audit, outbox, idempotency records and price/pack snapshots commit together. A failed line rolls everything back. Repeated keys return the original refill; changed payloads conflict. Machine history includes legacy transfers and reversals as well as grouped refill references. Refills are immutable; individual linked corrections remain available through the existing stock-document reversal API. Full visit workflows, refill-wide reversal, physical counts and offline sync are future work.
+The separate Refills page owns a multi-item Fill up form; Machines keeps machine administration separate. Source is selected once from warehouses or vehicles; items specify packs or individual units. The backend compares the displayed pack conversion, obtains product locks, converts quantities exactly, and posts all lines inside one tenant-serialized transaction. The refill header, individual stock documents, ledger, audit, outbox, idempotency records and price/pack snapshots commit together. A failed line rolls everything back. Repeated keys return the original refill; changed payloads conflict. Machine history includes legacy transfers and reversals as well as grouped refill references. Refills are immutable; individual linked corrections remain available through the existing stock-document reversal API. Full visit workflows, refill-wide reversal, physical counts and offline sync are future work.
 
 ## Suppliers and warehouse receiving
 
@@ -71,7 +71,7 @@ Receipt headers snapshot supplier and warehouse names, reference, declared recei
 
 Generic stock entry remains available for opening/test stock via the original unassigned external location. Named supplier sources must go through receiving; the public stock-document API rejects an unrecorded supplier receipt. Internal receipt posting uses the existing stock engine inside the parent transaction.
 
-Receiving never compares supplier/business currency labels or performs conversions. All amounts are entered directly; the label is cosmetic, with SCR as the default. Purchase orders, supplier credit notes, partial payments, payment reversals, tax-account classification and delivery-wide correction remain outside this milestone. Invoice-level charges/discounts are recorded explicitly without automatic allocation to item costs. See purchasing.md for invoice, debt and clearing behavior. Individual linked stock reversals flag the affected receipt lines without rewriting original costs; receipt history is original goods value, not an accounting balance. Physical receiving date and posting timestamp are distinct. Inventory history still orders postings by posting timestamp; period locking/backdated accounting remain future work.
+Receiving never compares supplier/business currency labels or performs conversions. All amounts are entered directly; the label is cosmetic, with SCR as the default. Purchase orders, supplier credit notes, partial payments, payment reversals, tax-account classification and delivery-wide correction remain outside this milestone. Invoice-level charges/discounts are recorded explicitly without automatic allocation to item costs. See purchasing.md for invoice, debt and clearing behavior. Individual linked stock reversals flag the affected receipt lines without rewriting original costs; receipt history is original goods value, not an accounting balance. Physical receiving date and posting timestamp are distinct. Transaction history still orders postings by posting timestamp; period locking/backdated accounting remain future work.
 
 ## Currency requirement supersedes the earlier currency-gating design
 
@@ -84,3 +84,7 @@ Migration 005 widens label columns from CHAR(3) to text, sets SCR defaults, and 
 See purchasing.md. Receipt lines retain entered pack/unit cost and exact line totals; derived unit costs use eight decimals and never drive pack invoice totals. Products retain latest received unit cost, original arrival-pack cost/size and source receipt; this is not weighted-average inventory valuation. Selling prices are unchanged. All link/cost/stock/invoice/payment effects share one transaction. Invoice amounts are checked to cents, while original goods lines retain four-decimal precision.
 
 Supplier invoice rows are immutable once confirmed. Payment headers, allocations and sent/cleared events are append-only. Unique per-invoice allocation plus the tenant transaction lock prevents double payment. IN_BANK remains a financial obligation until a CLEARED event exists; supplier overview and account totals use the same rule. Paid status does not remove records. Legacy receipts become unconfirmed review items, not invented debt. Credit terms are snapshotted on invoices, with immutable due dates and optional explicit overrides.
+
+## Daily operations clarification
+
+See [daily-operations.md](daily-operations.md) for the reference-sheet mapping, current screen split, driver route/count/reload requirements and future machine financial review. The latest owner clarification takes precedence over the old zero-stock closure plan. Routes, working-day reconciliation, cash/meter observations and worker login are not implemented by the navigation split.

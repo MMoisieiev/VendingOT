@@ -290,3 +290,56 @@ test('tiers are explicit amounts, missing prices remain unset, and cross-busines
   );
   assert.equal((await overview(f.actor)).prices[0].amount, '10.0000');
 });
+
+test('last recorded refill remains available beyond the 200-line history window and is machine-scoped', async () => {
+  const f = await fixture();
+  const empty = await machineHistory(f.actor, f.machine.id);
+  assert.equal(empty.latestRefill, null);
+  const refill = await postRefill(
+    f.actor,
+    f.machine.id,
+    randomUUID(),
+    f.refill,
+  );
+  await postMovement(f.actor, randomUUID(), {
+    kind: 'RECEIPT',
+    productId: f.product.id,
+    fromLocationId: f.supplier.id,
+    toLocationId: f.warehouse.id,
+    quantity: '300',
+    entryUnit: 'EA',
+    note: '',
+  });
+  const machineLocation = (
+    await pool.query(
+      'SELECT id FROM inventory_locations WHERE tenant_id=$1 AND machine_id=$2',
+      [f.actor.tenantId, f.machine.id],
+    )
+  ).rows[0].id;
+  for (let i = 0; i < 201; i++) {
+    await postMovement(f.actor, randomUUID(), {
+      kind: 'TRANSFER',
+      productId: f.product.id,
+      fromLocationId: f.warehouse.id,
+      toLocationId: machineLocation,
+      quantity: '1',
+      entryUnit: 'EA',
+      note: 'Legacy manual delivery',
+    });
+  }
+  const history = await machineHistory(f.actor, f.machine.id);
+  assert.equal(history.history.length, 200);
+  assert.ok(history.history.every((row) => row.refill_id === null));
+  assert.equal(history.latestRefill.id, refill.id);
+  assert.equal(history.latestRefill.source_name, 'Warehouse');
+  const another = await saveMachine(f.actor, {
+    name: 'Another machine',
+    priceTierId: f.tier.id,
+  });
+  assert.equal((await machineHistory(f.actor, another.id)).latestRefill, null);
+  const other = await fixture();
+  await assert.rejects(
+    machineHistory(other.actor, f.machine.id),
+    /Machine not found/,
+  );
+});

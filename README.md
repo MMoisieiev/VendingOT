@@ -38,6 +38,8 @@ Restart the API with `npm run dev -w @vendingot/api` and the web in another term
 
 ## Using the screens
 
+**Inventory** shows warehouse/van balances. **Transactions** holds the latest 50 stock postings and linked corrections, with search. **Refills** is the daily entry screen: choose a machine, see its last recorded refill and recent history, then click **New refill**. **Machines** manages permanent machine details separately.
+
 Lists open first. Use **Add product**, **Add machine**, **Add supplier**, **Add location**, or **Receive delivery** to open a form; **Cancel** returns without saving, and a successful save returns to the list. Product editing replaces the list while it is open. Price tiers and supplier links have their own add buttons. Select unpaid invoices and click **Pay selected invoices** to open payment entry.
 
 Use **Hide menu** to collapse the sidebar to icons on desktop, or hide its navigation on phones. The menu button expands it again, and the preference is remembered in this browser.
@@ -58,6 +60,8 @@ A supplier case may contain 24 bottles even when the product’s normal refill p
 Old deliveries have no known payment status or checked invoice total. They appear under **Needs review** and do not silently become debt. Confirm the paper invoice total, then record the original payment if already paid. Old-format API requests without a checked invoice total also stay unconfirmed. Existing stock, invoice references and recorded amounts are preserved by migration.
 
 Posting and payments are atomic/idempotent. Duplicate references are blocked per supplier; failed lines or payment allocations roll back all effects. Stock reversals do not cancel a supplier invoice or count as payment; original financial records remain. Settlements currently cover full selected invoices; partial payments, payment reversals, supplier credit notes and a general ledger are separate future workflows. The application records bank status; it never initiates bank transfers. Currency remains cosmetic SCR text.
+
+See [daily operations specification](docs/daily-operations.md) for the driver route, van count/reload and future machine financial-review requirements. The latest workflow carries verified stock into the next day; it does not require an empty van.
 
 See [purchasing specification](docs/purchasing.md) for the reference workbook mapping and API details.
 

@@ -50,7 +50,19 @@ export async function machineHistory(actor: Actor, machineId: string) {
     ORDER BY d.posted_at DESC,d.id DESC LIMIT 200`,
     [actor.tenantId, machine.rows[0].location_id],
   );
-  return { machine: machine.rows[0], history: history.rows };
+  const latestRefill = await pool.query(
+    `SELECT r.id,r.posted_at,l.name AS source_name
+     FROM machine_refills r
+     JOIN inventory_locations l ON l.tenant_id=r.tenant_id AND l.id=r.source_location_id
+     WHERE r.tenant_id=$1 AND r.machine_id=$2
+     ORDER BY r.posted_at DESC,r.id DESC LIMIT 1`,
+    [actor.tenantId, machineId],
+  );
+  return {
+    machine: machine.rows[0],
+    history: history.rows,
+    latestRefill: latestRefill.rows[0] ?? null,
+  };
 }
 
 export async function postRefill(

@@ -5,11 +5,15 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { api, Overview, Movement, prettyQuantity } from '../lib/client';
 import { Catalog } from './catalog';
 import { Machines } from './machines';
+import { Refills } from './refills';
+import { Transactions } from './transactions';
 import { Suppliers } from './suppliers';
 import { Receiving } from './receiving';
 type Tab =
   | 'Overview'
   | 'Inventory'
+  | 'Transactions'
+  | 'Refills'
   | 'Products'
   | 'Locations'
   | 'Machines'
@@ -197,6 +201,8 @@ export default function Home() {
             [
               'Overview',
               'Inventory',
+              'Refills',
+              'Transactions',
               'Products',
               'Machines',
               'Suppliers',
@@ -217,7 +223,7 @@ export default function Home() {
               }}
             >
               <span aria-hidden="true">
-                {['◫', '▤', '▦', '▣', '◇', '↓', '⌖'][i]}
+                {['◫', '▤', '↻', '↔', '▦', '▣', '◇', '↓', '⌖'][i]}
               </span>
               <span className="nav-text">{name}</span>
               {tab === name && <span className="nav-dot" />}
@@ -257,24 +263,22 @@ export default function Home() {
               <p className="eyebrow">ISLAND VENDING</p>
               <h1>{tab}</h1>
               <p className="subtitle">
-                {tab === 'Overview'
-                  ? 'One workspace for the stock that keeps your business moving.'
-                  : tab === 'Inventory'
-                    ? 'Live balances and a permanent record of every transfer.'
-                    : tab === 'Products'
-                      ? 'Manage the products moving through your business.'
-                      : tab === 'Machines'
-                        ? 'Machine details, price tiers, and refill history.'
-                        : tab === 'Suppliers'
-                          ? 'Contacts, ordering packs and product purchase costs.'
-                          : tab === 'Receiving'
-                            ? 'Receive supplier deliveries into warehouse stock.'
-                            : 'Warehouses and delivery vehicles.'}
+                {
+                  {
+                    Overview: 'Your operation at a glance.',
+                    Inventory: 'Current warehouse and van stock.',
+                    Refills: 'Daily machine refills and recent visits.',
+                    Transactions: 'Stock movements, transfers and corrections.',
+                    Products: 'Products, packaging and selling prices.',
+                    Machines: 'Machine records, sites and price tiers.',
+                    Suppliers: 'Supplier contacts, invoices and balances.',
+                    Receiving: 'Receive deliveries into warehouse stock.',
+                    Locations: 'Warehouses and delivery vehicles.',
+                  }[tab]
+                }
               </p>
             </div>
-            {(tab === 'Overview' ||
-              tab === 'Inventory' ||
-              tab === 'Locations') && (
+            {tab === 'Transactions' && (
               <button
                 className="primary"
                 disabled={!data || busy}
@@ -323,45 +327,42 @@ export default function Home() {
             <>
               {(tab === 'Overview' || tab === 'Inventory') && (
                 <>
-                  <div className="stats">
-                    {[
-                      [
-                        'Products',
-                        data.products.length,
-                        'Active catalog items',
-                        '▦',
-                      ],
-                      [
-                        'Stock locations',
-                        internal.length,
-                        'Across your operation',
-                        '⌖',
-                      ],
-                      [
-                        'Machines',
-                        machineCount,
-                        'Details & delivery history',
-                        '◫',
-                      ],
-                      [
-                        'Posted movements',
-                        data.movements.length === 50
-                          ? '50+'
-                          : data.movements.length,
-                        'Receipts, transfers & reversals',
-                        '↗',
-                      ],
-                    ].map(([label, value, detail, icon]) => (
-                      <div className="stat" key={String(label)}>
-                        <div className="stat-label">
-                          {label}
-                          <span>{icon}</span>
+                  {tab === 'Overview' && (
+                    <div className="stats">
+                      {[
+                        [
+                          'Products',
+                          data.products.length,
+                          'Active catalog items',
+                          '▦',
+                        ],
+                        [
+                          'Stock locations',
+                          internal.length,
+                          'Across your operation',
+                          '⌖',
+                        ],
+                        ['Machines', machineCount, 'Machine records', '◫'],
+                        [
+                          'Posted movements',
+                          data.movements.length === 50
+                            ? '50+'
+                            : data.movements.length,
+                          'Receipts, transfers & reversals',
+                          '↗',
+                        ],
+                      ].map(([label, value, detail, icon]) => (
+                        <div className="stat" key={String(label)}>
+                          <div className="stat-label">
+                            {label}
+                            <span>{icon}</span>
+                          </div>
+                          <strong>{value}</strong>
+                          <small>{detail}</small>
                         </div>
-                        <strong>{value}</strong>
-                        <small>{detail}</small>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                   {tab === 'Overview' && (
                     <div className="journey">
                       <div>
@@ -456,101 +457,21 @@ export default function Home() {
                     </div>
                     <div className="panel-footer">
                       <span className="small-dot" /> Machine deliveries appear
-                      under Machines. Current stock inside a machine is unknown.
+                      under Refills. Current stock inside a machine is unknown.
                     </div>
-                  </section>
-                  <section className="panel">
-                    <div className="panel-heading">
-                      <div>
-                        <h2>Movement history</h2>
-                        <p>
-                          Latest 50 postings · original records are preserved
-                          when reversed.
-                        </p>
-                      </div>
-                      <span className="pill">APPEND-ONLY</span>
-                    </div>
-                    {data.movements.length === 0 ? (
-                      <div className="empty">
-                        <span className="empty-icon">↔</span>
-                        <h3>Your stock story starts here.</h3>
-                        <p>
-                          Receive stock into the warehouse, then transfer it to
-                          a van or machine.
-                        </p>
-                        <button
-                          className="text-button"
-                          onClick={() => setShowMovement(true)}
-                        >
-                          Record your first movement →
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="table-scroll">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>PRODUCT / DATE</th>
-                              <th>MOVEMENT</th>
-                              <th>QUANTITY</th>
-                              <th>STATUS</th>
-                              <th>ACTION</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {data.movements.map((m) => (
-                              <tr key={m.id}>
-                                <td>
-                                  <strong>{m.product_name}</strong>
-                                  <small>
-                                    {new Date(m.posted_at).toLocaleString(
-                                      'en-GB',
-                                      { timeZone: data.tenant.timezone },
-                                    )}
-                                  </small>
-                                </td>
-                                <td>
-                                  {m.from_name}
-                                  <span className="arrow">→</span>
-                                  {m.to_name}
-                                  <small>
-                                    {m.note || locationType(m.kind)} ·{' '}
-                                    {m.posted_by}
-                                  </small>
-                                </td>
-                                <td>
-                                  <strong>{prettyQuantity(m.quantity)}</strong>
-                                </td>
-                                <td>
-                                  <span
-                                    className={`pill ${m.reversed || m.kind === 'REVERSAL' ? '' : 'green'}`}
-                                  >
-                                    {m.reversed
-                                      ? 'REVERSED'
-                                      : m.kind === 'REVERSAL'
-                                        ? 'REVERSAL'
-                                        : 'POSTED'}
-                                  </span>
-                                </td>
-                                <td>
-                                  {!m.reversed && m.kind !== 'REVERSAL' && (
-                                    <button
-                                      className="text-button"
-                                      disabled={busy}
-                                      onClick={() => setReverse(m)}
-                                    >
-                                      Reverse
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
                   </section>
                 </>
+              )}
+              {tab === 'Transactions' && (
+                <Transactions
+                  data={data}
+                  busy={busy}
+                  onReverse={setReverse}
+                  onRecord={() => setShowMovement(true)}
+                />
+              )}
+              {tab === 'Refills' && (
+                <Refills data={data} save={save} busy={busy} />
               )}
               {tab === 'Products' && (
                 <Catalog data={data} save={save} busy={busy} />
