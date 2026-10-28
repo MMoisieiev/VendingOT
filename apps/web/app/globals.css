@@ -1088,3 +1088,87 @@ textarea {
     padding: 10px;
   }
 }
+
+/* Keep creation screens separate from the lists used throughout the day. */
+.editor-page {
+  max-width: 880px;
+  margin-inline: auto;
+}
+.sidebar {
+  overflow-y: auto;
+}
+.sidebar-toggle {
+  border: 1px solid #557266;
+  background: transparent;
+  color: #d5e3dd;
+  border-radius: 6px;
+  padding: 9px;
+  margin-bottom: 20px;
+  text-align: left;
+}
+.sidebar-toggle:hover {
+  background: #213e33;
+}
+.sidebar-collapsed .sidebar {
+  width: 76px;
+  padding: 20px 12px;
+}
+.sidebar-collapsed main {
+  margin-left: 76px;
+  width: calc(100% - 76px);
+}
+.sidebar-collapsed .brand > span:last-child,
+.sidebar-collapsed .workspace,
+.sidebar-collapsed .nav-label,
+.sidebar-collapsed .nav-text,
+.sidebar-collapsed .nav-dot,
+.sidebar-collapsed .sidebar-note,
+.sidebar-collapsed .profile {
+  display: none;
+}
+.sidebar-collapsed nav {
+  margin-top: 25px;
+}
+.sidebar-collapsed .nav-item,
+.sidebar-collapsed .sidebar-toggle {
+  justify-content: center;
+  text-align: center;
+}
+.sidebar-collapsed .nav-item {
+  padding: 13px 10px;
+}
+@media (max-width: 760px) {
+  .sidebar,
+  .sidebar-collapsed .sidebar {
+    position: relative;
+  }
+  .sidebar-toggle {
+    position: absolute;
+    right: 20px;
+    top: 16px;
+    margin: 0;
+  }
+  .product-table {
+    min-width: 760px;
+  }
+  .sidebar-collapsed .sidebar {
+    width: 100%;
+    padding: 16px 20px;
+  }
+  .sidebar-collapsed .brand > span:last-child {
+    display: block;
+  }
+  .sidebar-collapsed nav {
+    display: none;
+  }
+  .sidebar-collapsed main {
+    margin: 0;
+    width: 100%;
+  }
+  .panel-heading {
+    flex-wrap: wrap;
+  }
+  .search-label {
+    width: 100%;
+  }
+}

@@ -36,14 +36,20 @@ npm run db:seed
 
 Restart the API with `npm run dev -w @vendingot/api` and the web in another terminal with `npm run dev -w @vendingot/web`. These separate commands work in Windows PowerShell too. Do not delete your database volume. Migrations retain products, machines and transaction history. Migration 002 assigns permanent numbers; migration 004 converts existing nonempty supplier names into supplier records and links, merging case/space variants within each business. Existing products keep a one-unit pack until you configure their actual packaging; fresh seed records use twelve-bottle water packs.
 
+## Using the screens
+
+Lists open first. Use **Add product**, **Add machine**, **Add supplier**, **Add location**, or **Receive delivery** to open a form; **Cancel** returns without saving, and a successful save returns to the list. Product editing replaces the list while it is open. Price tiers and supplier links have their own add buttons. Select unpaid invoices and click **Pay selected invoices** to open payment entry.
+
+Use **Hide menu** to collapse the sidebar to icons on desktop, or hide its navigation on phones. The menu button expands it again, and the preference is remembered in this browser.
+
 ## Test supplier receiving, invoice debt and payments
 
 1. Create a supplier under **Suppliers**. No product-linking step is required to receive goods. Set the credit term (Apex uses 30 days in the reference workbook; the default is 21).
-2. Open **Receiving**, choose the supplier/warehouse, and enter invoice reference, invoice date and received date. A due-date override is optional; otherwise the supplier’s credit term is snapshotted.
+2. Open **Receiving → Receive delivery**, choose the supplier/warehouse, and enter invoice reference, invoice date and received date. A due-date override is optional; otherwise the supplier’s credit term is snapshotted.
 3. Click **Add delivery item**, select any active product and enter its arrival pack size, quantity and **cost per arrival pack**. For example, 2 packs of 12 at SCR 100 per pack means 24 units and SCR 200 exactly. The displayed unit cost is derived to eight decimal places; totals use the original pack price, not the rounded unit cost.
 4. Add more products if needed. Enter the paper invoice total. Posting requires the calculated total (rounded to cents) to match. Optional signed invoice charges/discounts need an explanation; these header adjustments are not allocated into item costs.
 5. Leave **Invoice already paid** unchecked to create unpaid debt, or check it and enter payment date/reference for an already settled invoice. Posting updates stock, remembers product–supplier links/arrival packing, and updates each item’s **latest purchase cost**. It does not change selling prices or the product’s normal refill pack.
-6. Open **Suppliers → supplier → Supplier account**. Select unpaid invoices and choose **Paid / cleared** or **Sent to bank · awaiting clearing**. One record may cover several complete invoices.
+6. Open **Suppliers → supplier → Supplier account**. Select unpaid invoices, click **Pay selected invoices**, and choose **Paid / cleared** or **Sent to bank · awaiting clearing**. One record may cover several complete invoices.
 7. A pending bank transfer remains in outstanding debt. Use **Mark cleared** in payment history and record the clearing date to settle its invoices. Paid invoices remain in the Paid/All views, and all payment records are retained.
 8. Check deadline indicators: overdue, pay now (due within two days), or not due yet. These are reminders, not restrictions on when you may pay. Supplier term edits affect new invoices; old due dates remain recorded.
 

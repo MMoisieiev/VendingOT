@@ -28,6 +28,7 @@ export function SupplierAccounts({
   const [selected, setSelected] = useState<string[]>([]);
   const [clearing, setClearing] = useState<string | null>(null);
   const [review, setReview] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
   const [paymentStage, setPaymentStage] = useState<'PAID' | 'IN_BANK'>('PAID');
   const today = new Intl.DateTimeFormat('en-CA', {
     timeZone: data.tenant.timezone,
@@ -39,6 +40,7 @@ export function SupplierAccounts({
     let ignore = false;
     setError('');
     setSelected([]);
+    setPaying(false);
     api<SupplierAccount>(
       `suppliers/${supplier.id}/account?status=${status}${cursor ? `&cursor=${cursor}` : ''}`,
     )
@@ -285,89 +287,103 @@ export function SupplierAccounts({
                   </button>
                 </form>
               ))}
-          <form
-            className="payment-form"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const form = e.currentTarget;
-              const values = Object.fromEntries(new FormData(form));
-              if (
-                await save(
-                  `suppliers/${supplier.id}/payments`,
-                  { ...values, invoiceIds: selected },
-                  values.stage === 'IN_BANK'
-                    ? 'Transfer recorded as in bank. Debt stays outstanding until it clears.'
-                    : 'Payment recorded. Selected invoices are paid and removed from outstanding debt.',
-                  true,
-                )
-              ) {
-                setSelected([]);
-                setPaymentStage('PAID');
-                form.reset();
-              }
-            }}
-          >
-            <h3 className="form-section">Pay off selected invoices</h3>
-            <p className="form-hint">
-              Select unpaid invoices above. This records a full payment or a
-              transfer sent to bank; it does not send a bank transfer. Pending
-              bank transfers remain part of debt until cleared. Paid invoices
-              and payment records remain in history.
-            </p>
-            <label>
-              Payment status
-              <select
-                name="stage"
-                value={paymentStage}
-                onChange={(e) =>
-                  setPaymentStage(e.target.value as 'PAID' | 'IN_BANK')
+          <div className="modal-actions">
+            <button
+              className="secondary"
+              disabled={busy || (!paying && !selected.length)}
+              onClick={() => setPaying(!paying)}
+            >
+              {paying
+                ? 'Cancel payment'
+                : `Pay selected invoices (${selected.length})`}
+            </button>
+          </div>
+          {paying && (
+            <form
+              className="payment-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const form = e.currentTarget;
+                const values = Object.fromEntries(new FormData(form));
+                if (
+                  await save(
+                    `suppliers/${supplier.id}/payments`,
+                    { ...values, invoiceIds: selected },
+                    values.stage === 'IN_BANK'
+                      ? 'Transfer recorded as in bank. Debt stays outstanding until it clears.'
+                      : 'Payment recorded. Selected invoices are paid and removed from outstanding debt.',
+                    true,
+                  )
+                ) {
+                  setPaying(false);
+                  setSelected([]);
+                  setPaymentStage('PAID');
+                  form.reset();
                 }
-              >
-                <option value="PAID">Paid / cleared</option>
-                <option value="IN_BANK">
-                  Sent to bank · awaiting clearing
-                </option>
-              </select>
-            </label>
-            <div className="form-row">
+              }}
+            >
+              <h3 className="form-section">Pay off selected invoices</h3>
+              <p className="form-hint">
+                Select unpaid invoices above. This records a full payment or a
+                transfer sent to bank; it does not send a bank transfer. Pending
+                bank transfers remain part of debt until cleared. Paid invoices
+                and payment records remain in history.
+              </p>
               <label>
-                {paymentStage === 'IN_BANK'
-                  ? 'Bank initiation date'
-                  : 'Payment / cleared date'}
-                <input
-                  name="paidOn"
-                  type="date"
-                  required
-                  defaultValue={today}
-                />
+                Payment status
+                <select
+                  name="stage"
+                  value={paymentStage}
+                  onChange={(e) =>
+                    setPaymentStage(e.target.value as 'PAID' | 'IN_BANK')
+                  }
+                >
+                  <option value="PAID">Paid / cleared</option>
+                  <option value="IN_BANK">
+                    Sent to bank · awaiting clearing
+                  </option>
+                </select>
               </label>
+              <div className="form-row">
+                <label>
+                  {paymentStage === 'IN_BANK'
+                    ? 'Bank initiation date'
+                    : 'Payment / cleared date'}
+                  <input
+                    name="paidOn"
+                    type="date"
+                    required
+                    defaultValue={today}
+                  />
+                </label>
+                <label>
+                  Payment reference
+                  <input
+                    name="reference"
+                    maxLength={120}
+                    placeholder="Bank / cash reference"
+                  />
+                </label>
+              </div>
               <label>
-                Payment reference
-                <input
-                  name="reference"
-                  maxLength={120}
-                  placeholder="Bank / cash reference"
-                />
+                Payment note
+                <input name="note" maxLength={500} />
               </label>
-            </div>
-            <label>
-              Payment note
-              <input name="note" maxLength={500} />
-            </label>
-            <div className="receipt-total">
-              <strong>
-                {selected.length} selected ·{' '}
-                {amount(decimal(paymentTotal, 2), supplier.currency)}
-              </strong>
-              <button className="primary" disabled={busy || !selected.length}>
-                {busy
-                  ? 'Recording…'
-                  : paymentStage === 'IN_BANK'
-                    ? 'Record bank transfer'
-                    : 'Record selected invoices as paid'}
-              </button>
-            </div>
-          </form>
+              <div className="receipt-total">
+                <strong>
+                  {selected.length} selected ·{' '}
+                  {amount(decimal(paymentTotal, 2), supplier.currency)}
+                </strong>
+                <button className="primary" disabled={busy || !selected.length}>
+                  {busy
+                    ? 'Recording…'
+                    : paymentStage === 'IN_BANK'
+                      ? 'Record bank transfer'
+                      : 'Record selected invoices as paid'}
+                </button>
+              </div>
+            </form>
+          )}
           {clearing && (
             <form
               className="legacy-review"

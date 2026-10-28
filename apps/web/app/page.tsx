@@ -31,6 +31,26 @@ export default function Home() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showLocation, setShowLocation] = useState(false);
+  useEffect(() => {
+    try {
+      setSidebarCollapsed(
+        localStorage.getItem('vendingot-sidebar-collapsed') === 'true',
+      );
+    } catch {
+      /* Storage may be unavailable. */
+    }
+  }, []);
+  function toggleSidebar() {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    try {
+      localStorage.setItem('vendingot-sidebar-collapsed', String(next));
+    } catch {
+      /* Keep the toggle usable without storage. */
+    }
+  }
   const [showMovement, setShowMovement] = useState(false);
   const [kind, setKind] = useState('RECEIPT');
   const [movementProductId, setMovementProductId] = useState('');
@@ -143,8 +163,18 @@ export default function Home() {
     )?.quantity ?? '0';
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
+        <button
+          className="sidebar-toggle"
+          onClick={toggleSidebar}
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!sidebarCollapsed}
+          aria-controls="main-navigation"
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {sidebarCollapsed ? '☰' : '‹ Hide menu'}
+        </button>
         <a className="brand" href="/">
           <span className="brand-mark">
             V<span>·</span>
@@ -162,7 +192,7 @@ export default function Home() {
           <span className="workspace-dot" />
         </div>
         <p className="nav-label">WORKSPACE</p>
-        <nav aria-label="Main navigation">
+        <nav id="main-navigation" aria-label="Main navigation">
           {(
             [
               'Overview',
@@ -176,13 +206,20 @@ export default function Home() {
           ).map((name, i) => (
             <button
               key={name}
+              aria-label={name}
+              title={sidebarCollapsed ? name : undefined}
+              aria-current={tab === name ? 'page' : undefined}
               className={tab === name ? 'nav-item active' : 'nav-item'}
-              onClick={() => setTab(name)}
+              onClick={() => {
+                setTab(name);
+                setShowLocation(false);
+                setReceivingSupplier('');
+              }}
             >
               <span aria-hidden="true">
                 {['◫', '▤', '▦', '▣', '◇', '↓', '⌖'][i]}
               </span>
-              {name}
+              <span className="nav-text">{name}</span>
               {tab === name && <span className="nav-dot" />}
             </button>
           ))}
@@ -218,21 +255,7 @@ export default function Home() {
           <div className="page-heading">
             <div>
               <p className="eyebrow">ISLAND VENDING</p>
-              <h1>
-                {tab === 'Overview'
-                  ? 'Your operations, in view.'
-                  : tab === 'Inventory'
-                    ? 'Stock with a paper trail.'
-                    : tab === 'Products'
-                      ? 'Your product catalog.'
-                      : tab === 'Machines'
-                        ? 'Your machines, one place.'
-                        : tab === 'Suppliers'
-                          ? 'Your supplier directory.'
-                          : tab === 'Receiving'
-                            ? 'Deliveries, recorded once.'
-                            : 'A place for every product.'}
-              </h1>
+              <h1>{tab}</h1>
               <p className="subtitle">
                 {tab === 'Overview'
                   ? 'One workspace for the stock that keeps your business moving.'
@@ -555,85 +578,103 @@ export default function Home() {
                 <Machines data={data} save={save} busy={busy} />
               )}
               {tab === 'Locations' && (
-                <div className="two-columns">
-                  <section className="panel">
-                    <div className="panel-heading">
-                      <h2>Stock locations</h2>
-                      <span className="pill">{internal.length} INTERNAL</span>
-                    </div>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>CODE / NAME</th>
-                          <th>TYPE</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.locations
-                          .filter((l) => l.type !== 'MACHINE')
-                          .map((l) => (
-                            <tr key={l.id}>
-                              <td>
-                                <strong>{l.name}</strong>
-                                <small>{l.code}</small>
-                              </td>
-                              <td>
-                                <span className="pill">
-                                  {locationType(l.type)}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </section>
-                  <section className="panel form-panel">
-                    <h2>Add a location</h2>
-                    <p>Manage machines in the separate Machines section.</p>
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        const form = e.currentTarget;
-                        if (
-                          await save(
-                            'locations',
-                            Object.fromEntries(new FormData(form)),
-                            'Location added.',
+                <div>
+                  {!showLocation && (
+                    <section className="panel">
+                      <div className="panel-heading">
+                        <h2>Stock locations</h2>
+                        <button
+                          className="primary"
+                          onClick={() => setShowLocation(true)}
+                        >
+                          ＋ Add location
+                        </button>
+                      </div>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>CODE / NAME</th>
+                            <th>TYPE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.locations
+                            .filter((l) => l.type !== 'MACHINE')
+                            .map((l) => (
+                              <tr key={l.id}>
+                                <td>
+                                  <strong>{l.name}</strong>
+                                  <small>{l.code}</small>
+                                </td>
+                                <td>
+                                  <span className="pill">
+                                    {locationType(l.type)}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </section>
+                  )}
+                  {showLocation && (
+                    <section className="panel form-panel editor-page">
+                      <div className="editor-heading">
+                        <h2>Add a location</h2>
+                        <button
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => setShowLocation(false)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      <p>Manage machines in the separate Machines section.</p>
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          const form = e.currentTarget;
+                          if (
+                            await save(
+                              'locations',
+                              Object.fromEntries(new FormData(form)),
+                              'Location added.',
+                            )
                           )
-                        )
-                          form.reset();
-                      }}
-                    >
-                      <label>
-                        Code
-                        <input
-                          name="code"
-                          required
-                          maxLength={120}
-                          placeholder="VAN-002"
-                        />
-                      </label>
-                      <label>
-                        Name
-                        <input
-                          name="name"
-                          required
-                          maxLength={120}
-                          placeholder="Delivery van 02"
-                        />
-                      </label>
-                      <label>
-                        Type
-                        <select name="type">
-                          <option value="WAREHOUSE">Warehouse</option>
-                          <option value="VEHICLE">Vehicle</option>
-                        </select>
-                      </label>
-                      <button className="primary" disabled={busy}>
-                        {busy ? 'Saving…' : 'Add location'}
-                      </button>
-                    </form>
-                  </section>
+                            setShowLocation(false);
+                        }}
+                      >
+                        <label>
+                          Code
+                          <input
+                            name="code"
+                            required
+                            maxLength={120}
+                            placeholder="VAN-002"
+                          />
+                        </label>
+                        <label>
+                          Name
+                          <input
+                            name="name"
+                            required
+                            maxLength={120}
+                            placeholder="Delivery van 02"
+                          />
+                        </label>
+                        <label>
+                          Type
+                          <select name="type">
+                            <option value="WAREHOUSE">Warehouse</option>
+                            <option value="VEHICLE">Vehicle</option>
+                          </select>
+                        </label>
+                        <button className="primary" disabled={busy}>
+                          {busy ? 'Saving…' : 'Add location'}
+                        </button>
+                      </form>
+                    </section>
+                  )}
                 </div>
               )}
             </>

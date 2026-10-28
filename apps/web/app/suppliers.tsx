@@ -345,6 +345,7 @@ export function SupplierLinks({
   supplierId?: string;
   productId?: string;
 }) {
+  const [showEditor, setShowEditor] = useState(false);
   const [edit, setEdit] = useState<SupplierProduct | null>(null);
   const [chosenSupplier, setChosenSupplier] = useState(supplierId ?? '');
   const [chosenProduct, setChosenProduct] = useState(productId ?? '');
@@ -374,18 +375,18 @@ export function SupplierLinks({
     <section className="panel form-panel">
       <div className="editor-heading">
         <h2>{productId ? 'Product suppliers' : 'Supplied products'}</h2>
-        {edit && (
-          <button
-            className="text-button"
-            onClick={() => {
-              setEdit(null);
-              setChosenSupplier(supplierId ?? '');
-              setChosenProduct(productId ?? '');
-            }}
-          >
-            New link
-          </button>
-        )}
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => {
+            setShowEditor(!showEditor);
+            setEdit(null);
+            setChosenSupplier(supplierId ?? '');
+            setChosenProduct(productId ?? '');
+          }}
+        >
+          {showEditor ? 'Cancel' : '＋ Add supplier link'}
+        </button>
       </div>
       <p className="form-hint">
         Supplier ordering packs can differ from the product’s normal pack. Costs
@@ -444,6 +445,7 @@ export function SupplierLinks({
                     <button
                       className="text-button"
                       onClick={() => {
+                        setShowEditor(true);
                         setEdit(l);
                         setChosenSupplier(l.supplier_id);
                         setChosenProduct(l.product_id);
@@ -511,177 +513,188 @@ export function SupplierLinks({
           )}
         </div>
       )}
-      <h3 className="form-section">
-        {edit ? 'Edit supplier product' : 'Link a product and supplier'}
-      </h3>
-      <form
-        key={`${edit?.id ?? 'new'}:${chosenSupplier}:${chosenProduct}`}
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const form = new FormData(e.currentTarget);
-          const values = Object.fromEntries(form);
-          const payload = {
-            ...values,
-            supplierId: supplierId ?? chosenSupplier,
-            productId: productId ?? chosenProduct,
-            unitsPerOrder: Number(values.unitsPerOrder),
-            unitCost: values.unitCost || null,
-            leadDays: values.leadDays === '' ? null : Number(values.leadDays),
-            preferred: form.get('preferred') === 'on',
-            active: form.get('active') === 'on',
-            creditDays: Number(values.creditDays),
-          };
-          if (
-            await save(
-              'supplier-products',
-              payload,
-              'Supplier product link saved.',
-            )
-          ) {
-            setEdit(null);
-            setChosenSupplier(supplierId ?? '');
-            setChosenProduct(productId ?? '');
-            setCostHistory(null);
-          }
-        }}
-      >
-        {!supplierId && (
-          <label>
-            Supplier
-            <select
-              value={chosenSupplier}
-              required
-              onChange={(e) => {
-                setEdit(
-                  data.supplierProducts.find(
-                    (l) =>
-                      l.supplier_id === e.target.value &&
-                      l.product_id === (productId ?? chosenProduct),
-                  ) ?? null,
-                );
-                setChosenSupplier(e.target.value);
-              }}
-            >
-              <option value="" disabled>
-                Choose supplier
-              </option>
-              {data.suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.legal_name}
-                  {s.active ? '' : ' (inactive)'}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {!productId && (
-          <label>
-            Product
-            <select
-              value={chosenProduct}
-              required
-              onChange={(e) => {
-                setEdit(
-                  data.supplierProducts.find(
-                    (l) =>
-                      l.product_id === e.target.value &&
-                      l.supplier_id === (supplierId ?? chosenSupplier),
-                  ) ?? null,
-                );
-                setChosenProduct(e.target.value);
-              }}
-            >
-              <option value="" disabled>
-                Choose product
-              </option>
-              {data.products.map((p) => (
-                <option value={p.id} key={p.id}>
-                  #{p.item_number} · {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <div className="form-row">
-          <label>
-            Supplier product reference
-            <input
-              name="supplierSku"
-              maxLength={120}
-              defaultValue={edit?.supplier_sku}
-            />
-          </label>
-          <label>
-            Ordering unit name
-            <input
-              name="orderUnit"
-              required
-              maxLength={120}
-              defaultValue={edit?.order_unit ?? product?.pack_label ?? 'Carton'}
-            />
-          </label>
-        </div>
-        <div className="form-row">
-          <label>
-            Individual units per ordering pack
-            <input
-              name="unitsPerOrder"
-              required
-              type="number"
-              min="1"
-              max="1000000"
-              step="1"
-              defaultValue={
-                edit?.units_per_order ?? product?.units_per_pack ?? 1
+      {showEditor && (
+        <>
+          <h3 className="form-section">
+            {edit ? 'Edit supplier product' : 'Link a product and supplier'}
+          </h3>
+          <form
+            key={`${edit?.id ?? 'new'}:${chosenSupplier}:${chosenProduct}`}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const form = new FormData(e.currentTarget);
+              const values = Object.fromEntries(form);
+              const payload = {
+                ...values,
+                supplierId: supplierId ?? chosenSupplier,
+                productId: productId ?? chosenProduct,
+                unitsPerOrder: Number(values.unitsPerOrder),
+                unitCost: values.unitCost || null,
+                leadDays:
+                  values.leadDays === '' ? null : Number(values.leadDays),
+                preferred: form.get('preferred') === 'on',
+                active: form.get('active') === 'on',
+                creditDays: Number(values.creditDays),
+              };
+              if (
+                await save(
+                  'supplier-products',
+                  payload,
+                  'Supplier product link saved.',
+                )
+              ) {
+                setShowEditor(false);
+                setEdit(null);
+                setChosenSupplier(supplierId ?? '');
+                setChosenProduct(productId ?? '');
+                setCostHistory(null);
               }
-            />
-          </label>
-          <label>
-            Purchase cost per individual unit (
-            {supplier?.currency ?? data.tenant.currency_code})
-            <input
-              name="unitCost"
-              type="number"
-              min="0"
-              step="0.00000001"
-              defaultValue={edit?.unit_cost ?? ''}
-              placeholder="Optional until receiving"
-            />
-          </label>
-        </div>
-        <label>
-          Lead time (days)
-          <input
-            name="leadDays"
-            type="number"
-            min="0"
-            max="36500"
-            step="1"
-            defaultValue={edit?.lead_days ?? ''}
-          />
-        </label>
-        <div className="button-group">
-          <label className="checkbox-label">
-            <input
-              name="preferred"
-              type="checkbox"
-              defaultChecked={edit?.preferred ?? false}
-            />
-            Preferred supplier for this product
-          </label>
-          <label className="checkbox-label">
-            <input
-              name="active"
-              type="checkbox"
-              defaultChecked={edit?.active ?? true}
-            />
-            Active link
-          </label>
-        </div>
-        <button className="primary" disabled={busy || !supplier || !product}>
-          {busy ? 'Saving…' : 'Save supplier link'}
-        </button>
-      </form>
+            }}
+          >
+            {!supplierId && (
+              <label>
+                Supplier
+                <select
+                  value={chosenSupplier}
+                  required
+                  onChange={(e) => {
+                    setEdit(
+                      data.supplierProducts.find(
+                        (l) =>
+                          l.supplier_id === e.target.value &&
+                          l.product_id === (productId ?? chosenProduct),
+                      ) ?? null,
+                    );
+                    setChosenSupplier(e.target.value);
+                  }}
+                >
+                  <option value="" disabled>
+                    Choose supplier
+                  </option>
+                  {data.suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.legal_name}
+                      {s.active ? '' : ' (inactive)'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {!productId && (
+              <label>
+                Product
+                <select
+                  value={chosenProduct}
+                  required
+                  onChange={(e) => {
+                    setEdit(
+                      data.supplierProducts.find(
+                        (l) =>
+                          l.product_id === e.target.value &&
+                          l.supplier_id === (supplierId ?? chosenSupplier),
+                      ) ?? null,
+                    );
+                    setChosenProduct(e.target.value);
+                  }}
+                >
+                  <option value="" disabled>
+                    Choose product
+                  </option>
+                  {data.products.map((p) => (
+                    <option value={p.id} key={p.id}>
+                      #{p.item_number} · {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="form-row">
+              <label>
+                Supplier product reference
+                <input
+                  name="supplierSku"
+                  maxLength={120}
+                  defaultValue={edit?.supplier_sku}
+                />
+              </label>
+              <label>
+                Ordering unit name
+                <input
+                  name="orderUnit"
+                  required
+                  maxLength={120}
+                  defaultValue={
+                    edit?.order_unit ?? product?.pack_label ?? 'Carton'
+                  }
+                />
+              </label>
+            </div>
+            <div className="form-row">
+              <label>
+                Individual units per ordering pack
+                <input
+                  name="unitsPerOrder"
+                  required
+                  type="number"
+                  min="1"
+                  max="1000000"
+                  step="1"
+                  defaultValue={
+                    edit?.units_per_order ?? product?.units_per_pack ?? 1
+                  }
+                />
+              </label>
+              <label>
+                Purchase cost per individual unit (
+                {supplier?.currency ?? data.tenant.currency_code})
+                <input
+                  name="unitCost"
+                  type="number"
+                  min="0"
+                  step="0.00000001"
+                  defaultValue={edit?.unit_cost ?? ''}
+                  placeholder="Optional until receiving"
+                />
+              </label>
+            </div>
+            <label>
+              Lead time (days)
+              <input
+                name="leadDays"
+                type="number"
+                min="0"
+                max="36500"
+                step="1"
+                defaultValue={edit?.lead_days ?? ''}
+              />
+            </label>
+            <div className="button-group">
+              <label className="checkbox-label">
+                <input
+                  name="preferred"
+                  type="checkbox"
+                  defaultChecked={edit?.preferred ?? false}
+                />
+                Preferred supplier for this product
+              </label>
+              <label className="checkbox-label">
+                <input
+                  name="active"
+                  type="checkbox"
+                  defaultChecked={edit?.active ?? true}
+                />
+                Active link
+              </label>
+            </div>
+            <button
+              className="primary"
+              disabled={busy || !supplier || !product}
+            >
+              {busy ? 'Saving…' : 'Save supplier link'}
+            </button>
+          </form>
+        </>
+      )}
     </section>
   );
 }
